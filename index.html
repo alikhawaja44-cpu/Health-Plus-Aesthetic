@@ -18,7 +18,10 @@
         .animate-in { animation: fadeIn .2s ease-out; }
 
         .sidebar { transition: transform .3s ease; }
-        .stat-card { transition: all .3s ease; }
+
+        .stat-card {
+            transition: all .3s ease;
+        }
         .stat-card:hover {
             transform: translateY(-5px);
             box-shadow: 0 20px 25px -5px rgba(0,0,0,.1);
@@ -31,7 +34,7 @@
 
     <script>
         // ======================================================================
-        // ClinicApp – single‑page professional clinic manager
+        // ClinicApp – complete single‑page clinic manager
         // ======================================================================
         class ClinicApp {
             constructor() {
@@ -42,6 +45,7 @@
                 this.editingId     = null;
                 this.searchTerm    = '';
 
+                // Initialise / load data
                 this.initializeData();
                 this.render();
                 this.bindEvents();
@@ -58,7 +62,7 @@
                     { id: 3, username: 'pharmacist', password: 'pharma123', email: 'pharma@clinic.com', role: 'Pharmacist', name: 'Michael Brown' }
                 ];
 
-                // Patients
+                // Patients (legacy records have no doctorId/charge – those are optional)
                 this.patients = JSON.parse(localStorage.getItem('clinic_patients')) || [
                     { id: 1, mrNumber: 'MR-24-5837', name: 'Alice Johnson', age: 35, gender: 'Female', contact: '555-0123', address: '123 Main St', registeredAt: '2024-01-15' },
                     { id: 2, mrNumber: 'MR-24-6291', name: 'Robert Chen',   age: 42, gender: 'Male',   contact: '555-0456', address: '456 Oak Ave',   registeredAt: '2024-01-20' },
@@ -67,9 +71,9 @@
 
                 // Appointments
                 this.appointments = JSON.parse(localStorage.getItem('clinic_appointments')) || [
-                    { id: 1, patientName: 'Alice Johnson',   patientId: 1, date: '2024-03-20', time: '10:00', doctor: 'Dr. Sarah Johnson',   token: 1, status: 'Completed', notes: 'Regular checkup' },
-                    { id: 2, patientName: 'Robert Chen',     patientId: 2, date: '2024-03-20', time: '11:30', doctor: 'Dr. John Smith',       token: 2, status: 'Confirmed', notes: 'Follow-up appointment' },
-                    { id: 3, patientName: 'Maria Garcia',    patientId: 3, date: '2024-03-21', time: '09:00', doctor: 'Dr. Sarah Johnson',   token: 1, status: 'Pending',   notes: 'Initial consultation' }
+                    { id: 1, patientName: 'Alice Johnson',   patientId: 1, date: '2024-03-20', time: '10:00', doctor: 'Dr. Sarah Johnson', token: 1, status: 'Completed', notes: 'Regular checkup' },
+                    { id: 2, patientName: 'Robert Chen',     patientId: 2, date: '2024-03-20', time: '11:30', doctor: 'Dr. John Smith', token: 2, status: 'Confirmed', notes: 'Follow-up appointment' },
+                    { id: 3, patientName: 'Maria Garcia',    patientId: 3, date: '2024-03-21', time: '09:00', doctor: 'Dr. Sarah Johnson', token: 1, status: 'Pending',   notes: 'Initial consultation' }
                 ];
 
                 // Inventory
@@ -81,7 +85,7 @@
                     { id: 5, name: 'Amoxil 250mg',   type: 'Capsule',  stock: 120, price: 30, supplier: 'MediSupply',  expiry: '2025-09-15' }
                 ];
 
-                // Prescriptions (legacy ones only have `medicines` string)
+                // Prescriptions (legacy have only a medicines string)
                 this.prescriptions = JSON.parse(localStorage.getItem('clinic_prescriptions')) || [
                     { id: 1, patientName: 'Alice Johnson', patientId: 1, doctor: 'Dr. Sarah Johnson', date: '2024-03-15', medicines: 'Panadol 500mg - 1 tablet twice daily for 5 days', diagnosis: 'Headache and fever', notes: 'Rest and hydrate well' },
                     { id: 2, patientName: 'Robert Chen',   patientId: 2, doctor: 'Dr. John Smith',    date: '2024-03-10', medicines: 'Augmentin 625mg - 1 tablet twice daily for 7 days', diagnosis: 'Respiratory infection', notes: 'Complete full course' }
@@ -126,7 +130,7 @@
             }
 
             formatCurrency(amount) {
-                return `Rs ${Number(amount || 0).toLocaleString()}`;
+                return `Rs ${Number(amount||0).toLocaleString()}`;
             }
 
             getStats() {
@@ -134,7 +138,7 @@
                 return {
                     totalPatients:       this.patients.length,
                     todayAppointments:   this.appointments.filter(a=>a.date===today).length,
-                    totalAppointments:   this.appointments.length,
+                    totalAppointments:  this.appointments.length,
                     revenue:             this.invoices.reduce((s,i)=>s+(Number(i.amount)||0),0),
                     monthlyRevenue:      this.invoices
                                          .filter(i=>new Date(i.date).getMonth()===new Date().getMonth())
@@ -145,13 +149,16 @@
             }
 
             // -----------------------------------------------------------------
-            // AUTH
+            // AUTHENTICATION
             // -----------------------------------------------------------------
             handleLogin() {
                 const username = document.getElementById('username')?.value;
                 const password = document.getElementById('password')?.value;
-                if (!username||!password) return;
-                const user = this.users.find(u=> (u.username===username||u.email===username) && u.password===password);
+                if (!username || !password) return;
+
+                const user = this.users.find(u =>
+                    (u.username===username || u.email===username) && u.password===password
+                );
                 if (user) {
                     this.currentUser = user;
                     this.saveData();
@@ -168,7 +175,7 @@
             }
 
             // -----------------------------------------------------------------
-            // UI HELPERS
+            // UI HELPERS (modal handling, notifications, etc.)
             // -----------------------------------------------------------------
             showModal(modalId, data=null) {
                 this.editingId = data?.id || null;
@@ -177,7 +184,7 @@
                 document.querySelectorAll('.modal').forEach(m=>m.classList.add('hidden'));
                 document.getElementById(modalId).classList.remove('hidden');
 
-                // Prescription‑specific initialisation
+                // Prescription‑specific initialisation (dynamic medicine selector)
                 if (modalId==='prescription-modal') {
                     if (Array.isArray(this.formData.medicinesList)) {
                         // already an array – keep it
@@ -205,14 +212,15 @@
                 n.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 notification ${
                     type==='error'   ? 'bg-red-500 text-white' :
                     type==='success' ? 'bg-green-500 text-white' :
-                                      'bg-blue-500 text-white' }`;
+                                        'bg-blue-500 text-white'
+                }`;
                 n.textContent = msg;
                 document.body.appendChild(n);
                 setTimeout(()=>n.remove(),3000);
             }
 
             // -----------------------------------------------------------------
-            // PATIENTS
+            // PATIENT MANAGEMENT (now records consulting doctor & charge)
             // -----------------------------------------------------------------
             savePatient() {
                 const f = document.getElementById('patient-form');
@@ -222,19 +230,29 @@
                     age:     fd.get('age'),
                     gender:  fd.get('gender'),
                     contact: fd.get('contact'),
-                    address: fd.get('address')
+                    address: fd.get('address'),
+                    doctorId: parseInt(fd.get('doctorId')),
+                    charge:   parseFloat(fd.get('charge'))
                 };
-                if (!data.name||!data.age||!data.contact) {
+                // basic validation
+                if (!data.name || !data.age || !data.contact) {
                     this.showNotification('Please fill in all required fields','error');
                     return;
                 }
+                if (isNaN(data.doctorId) || isNaN(data.charge)) {
+                    this.showNotification('Please select a doctor and enter a valid charge','error');
+                    return;
+                }
+
                 if (this.editingId) {
+                    // update existing patient
                     const ix = this.patients.findIndex(p=>p.id===this.editingId);
                     if (ix!==-1) {
-                        this.patients[ix] = {...this.patients[ix],...data};
+                        this.patients[ix] = { ...this.patients[ix], ...data };
                         this.showNotification('Patient updated successfully','success');
                     }
                 } else {
+                    // add new patient
                     const newPatient = {
                         id: Date.now(),
                         mrNumber: this.generateMR(),
@@ -277,10 +295,11 @@
                 }
                 const pat = this.patients.find(p=>p.id===data.patientId);
                 data.patientName = pat ? pat.name : 'Unknown';
+
                 if (this.editingId) {
                     const ix = this.appointments.findIndex(a=>a.id===this.editingId);
                     if (ix!==-1) {
-                        this.appointments[ix] = {...this.appointments[ix],...data};
+                        this.appointments[ix] = { ...this.appointments[ix], ...data };
                         this.showNotification('Appointment updated successfully','success');
                     }
                 } else {
@@ -319,7 +338,7 @@
             }
 
             // -----------------------------------------------------------------
-            // PRESCRIPTIONS (NEW STOCK‑AWARE LOGIC)
+            // PRESCRIPTIONS (stock‑aware)
             // -----------------------------------------------------------------
             deletePrescription(id) {
                 if (confirm('Are you sure you want to delete this prescription?')) {
@@ -330,7 +349,7 @@
                 }
             }
 
-            // ----- HELPERS FOR DYNAMIC MEDICINE LIST -----
+            // ----- Helpers for dynamic medicine list -----
             addPrescriptionMedication(med={}) {
                 const container = document.getElementById('prescription-meds-list');
                 if (!container) return;
@@ -373,16 +392,16 @@
                 container.innerHTML = '';
                 const meds = this.formData.medicinesList || [];
                 if (meds.length===0) {
-                    this.addPrescriptionMedication();   // empty start row
+                    this.addPrescriptionMedication();
                 } else {
                     meds.forEach(m=>this.addPrescriptionMedication(m));
                 }
             }
 
-            // ----- SAVE PRESCRIPTION -----
+            // ----- Save prescription (with stock check) -----
             savePrescription() {
-                const f        = document.getElementById('prescription-form');
-                const fd       = new FormData(f);
+                const f = document.getElementById('prescription-form');
+                const fd = new FormData(f);
                 const patientId   = parseInt(fd.get('patientId'));
                 const patientObj  = this.patients.find(p=>p.id===patientId);
                 const patientName = patientObj ? patientObj.name : '';
@@ -394,7 +413,7 @@
                     return;
                 }
 
-                // Gather medicines
+                // Gather medicines from UI
                 const medRows = document.querySelectorAll('#prescription-meds-list > div');
                 const meds = [];
                 for (let row of medRows) {
@@ -430,9 +449,9 @@
 
                 // Restore old stock if editing
                 if (this.editingId) {
-                    const old = this.prescriptions.find(p=>p.id===this.editingId);
-                    if (old && old.medicinesList) {
-                        old.medicinesList.forEach(m=>{
+                    const existing = this.prescriptions.find(p=>p.id===this.editingId);
+                    if (existing && existing.medicinesList) {
+                        existing.medicinesList.forEach(m=>{
                             const inv = this.inventory.find(i=>i.id===m.medicineId);
                             if (inv) inv.stock += m.quantity;
                         });
@@ -462,7 +481,7 @@
                 if (this.editingId) {
                     const ix = this.prescriptions.findIndex(p=>p.id===this.editingId);
                     if (ix!==-1) {
-                        this.prescriptions[ix] = {...this.prescriptions[ix],...prescData};
+                        this.prescriptions[ix] = { ...this.prescriptions[ix], ...prescData };
                         this.showNotification('Prescription updated successfully','success');
                     }
                 } else {
@@ -485,11 +504,11 @@
                 // Header
                 doc.setFontSize(20);
                 doc.setTextColor(44,62,80);
-                doc.text('HEALTH+ CLINIC',105,20,{align:'center'});
+                doc.text("HEALTH+ CLINIC",105,20,{align:'center'});
                 doc.setFontSize(12);
                 doc.setTextColor(128,128,128);
-                doc.text('Aesthetic & Medical Center',105,28,{align:'center'});
-                doc.text('123 Health Street, Medical City',105,35,{align:'center'});
+                doc.text("Aesthetic & Medical Center",105,28,{align:'center'});
+                doc.text("123 Health Street, Medical City",105,35,{align:'center'});
 
                 // Divider
                 doc.setDrawColor(200,200,200);
@@ -500,25 +519,30 @@
                 doc.setTextColor(44,62,80);
                 doc.text(`Dr. ${p.doctor}`,20,52);
                 doc.text(`Date: ${p.date}`,150,52);
+
                 doc.setFontSize(16);
-                doc.text('PRESCRIPTION',105,65,{align:'center'});
+                doc.text("PRESCRIPTION",105,65,{align:'center'});
+
+                // Patient info
                 doc.setFontSize(12);
                 doc.text(`Patient: ${p.patientName}`,20,75);
                 doc.text(`Date: ${p.date}`,20,82);
                 doc.text(`Diagnosis: ${p.diagnosis}`,20,92);
-                doc.text('Medicines:',20,105);
-                const lines = p.medicines.split('\\n');
+                doc.text("Medicines:",20,105);
+                const meds = p.medicines.split('\n');
                 let y = 112;
-                lines.forEach(l=>{
+                meds.forEach(med=>{
                     if (y>250){ doc.addPage(); y=20; }
-                    doc.text(`• ${l}`,25,y);
+                    doc.text(`• ${med}`,25,y);
                     y+=7;
                 });
                 if (p.notes) { y+=10; doc.text(`Notes: ${p.notes}`,20,y); }
+
                 // Footer
                 doc.setFontSize(10);
                 doc.setTextColor(128,128,128);
-                doc.text('This is a computer-generated prescription',105,280,{align:'center'});
+                doc.text("This is a computer-generated prescription",105,280,{align:'center'});
+
                 doc.save(`Prescription-${p.patientName}-${p.date}.pdf`);
                 this.showNotification('Prescription PDF generated','success');
             }
@@ -573,7 +597,7 @@
                 const f = document.getElementById('invoice-form');
                 const fd = new FormData(f);
                 const data = {
-                    patientName: fd.get('patientName'), // not used – keep for backward compatibility
+                    patientName: fd.get('patientName'), // legacy – not used
                     patientId:   parseInt(fd.get('patientId')),
                     items:      fd.get('items'),
                     amount:     parseFloat(fd.get('amount')),
@@ -610,12 +634,15 @@
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
 
-                doc.setFontSize(20); doc.setTextColor(44,62,80);
-                doc.text('HEALTH+ CLINIC',105,20,{align:'center'});
-                doc.setFontSize(12); doc.setTextColor(128,128,128);
-                doc.text('INVOICE',105,28,{align:'center'});
+                doc.setFontSize(20);
+                doc.setTextColor(44,62,80);
+                doc.text("HEALTH+ CLINIC",105,20,{align:'center'});
+                doc.setFontSize(12);
+                doc.setTextColor(128,128,128);
+                doc.text("INVOICE",105,28,{align:'center'});
 
-                doc.setFontSize(10); doc.setTextColor(0,0,0);
+                doc.setFontSize(10);
+                doc.setTextColor(0,0,0);
                 doc.text(`Invoice No: ${inv.invoiceNo}`,20,45);
                 doc.text(`Date: ${inv.date}`,20,52);
                 doc.text(`Patient: ${inv.patientName}`,20,59);
@@ -624,19 +651,25 @@
                 doc.line(10,65,200,65);
 
                 doc.setFontSize(12);
-                doc.text('Description',20,75);
-                doc.text('Amount',170,75,{align:'right'});
-                doc.setDrawColor(200,200,200); doc.line(10,78,200,78);
+                doc.text("Description",20,75);
+                doc.text("Amount",170,75,{align:'right'});
+                doc.setDrawColor(200,200,200);
+                doc.line(10,78,200,78);
                 const items = inv.items.split(',');
                 let y = 85;
-                items.forEach(it => { doc.text(it.trim(),20,y); y+=7; });
+                items.forEach(it=>{ doc.text(it.trim(),20,y); y+=7; });
 
-                y+=10; doc.setDrawColor(200,200,200); doc.line(10,y,200,y);
-                y+=10; doc.setFontSize(14);
-                doc.text('TOTAL',20,y);
+                y+=10;
+                doc.setDrawColor(200,200,200);
+                doc.line(10,y,200,y);
+                y+=10;
+                doc.setFontSize(14);
+                doc.text("TOTAL",20,y);
                 doc.text(this.formatCurrency(inv.amount),170,y,{align:'right'});
 
-                y+=15; doc.setFontSize(10); doc.text(`Status: ${inv.status}`,20,y);
+                y+=15;
+                doc.setFontSize(10);
+                doc.text(`Status: ${inv.status}`,20,y);
 
                 doc.save(`Invoice-${inv.invoiceNo}.pdf`);
                 this.showNotification('Invoice PDF generated','success');
@@ -757,12 +790,15 @@
             }
 
             // -----------------------------------------------------------------
-            // RENDERING (main layout, navigation, each view, modals)
+            // RENDERING (layout, navigation, each view, modals)
             // -----------------------------------------------------------------
             render() {
                 const appDiv = document.getElementById('app');
+
                 if (!this.currentUser) { this.renderLogin(); return; }
+
                 const stats = this.getStats();
+
                 appDiv.innerHTML = `
                     <div class="flex h-screen bg-slate-50 overflow-hidden">
                         <!-- Sidebar -->
@@ -786,10 +822,11 @@
                             </div>
                         </aside>
 
-                        <!-- Main -->
+                        <!-- Main Content -->
                         <div class="flex-1 flex flex-col md:ml-64">
+                            <!-- Header -->
                             <header class="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-4 md:px-8">
-                                <button onclick="app.isSidebarOpen=true;app.render();" class="md:hidden text-slate-500">
+                                <button onclick="app.isSidebarOpen = true; app.render();" class="md:hidden text-slate-500">
                                     <i class="fas fa-bars text-xl"></i>
                                 </button>
                                 <h1 class="text-xl font-bold text-slate-800 capitalize">${this.currentView==='staff'?'Manage Staff':this.currentView}</h1>
@@ -804,19 +841,21 @@
                                 </div>
                             </header>
 
+                            <!-- Main -->
                             <main class="flex-1 overflow-y-auto p-4 md:p-8">
                                 ${this.renderCurrentView(stats)}
                             </main>
                         </div>
 
-                        ${this.isSidebarOpen?'<div onclick="app.isSidebarOpen=false;app.render();" class="fixed inset-0 bg-black/50 z-40 md:hidden"></div>':''}
+                        ${this.isSidebarOpen ? '<div onclick="app.isSidebarOpen=false; app.render();" class="fixed inset-0 bg-black/50 z-40 md:hidden"></div>' : ''}
+
                         ${this.renderModals()}
                     </div>
                 `;
             }
 
             renderNavItems() {
-                const items = [
+                const navItems = [
                     {id:'dashboard',icon:'fa-chart-bar',label:'Dashboard'},
                     {id:'patients',icon:'fa-user-injured',label:'Patients'},
                     {id:'appointments',icon:'fa-calendar-check',label:'Appointments'},
@@ -825,9 +864,10 @@
                     {id:'pharmacy',icon:'fa-pills',label:'Pharmacy'},
                     {id:'laboratory',icon:'fa-flask',label:'Laboratory'}
                 ];
-                if (this.currentUser.role==='Admin') items.push({id:'staff',icon:'fa-users-cog',label:'Manage Staff'});
-                return items.map(it=>`
-                    <button onclick="app.currentView='${it.id}';app.isSidebarOpen=false;app.render();"
+                if (this.currentUser.role==='Admin') navItems.push({id:'staff',icon:'fa-users-cog',label:'Manage Staff'});
+
+                return navItems.map(it=>`
+                    <button onclick="app.currentView='${it.id}'; app.isSidebarOpen=false; app.render();" 
                             class="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${this.currentView===it.id?'bg-blue-600 text-white shadow-md':'text-slate-500 hover:bg-blue-50 hover:text-blue-600'}">
                         <i class="fas ${it.icon} w-5 text-center"></i>
                         <span class="font-medium">${it.label}</span>
@@ -842,22 +882,22 @@
                     appointments: this.renderAppointments(),
                     prescriptions:this.renderPrescriptions(),
                     billing:      this.renderBilling(),
-                    pharmacy:     this.renderPharmacy(),
-                    laboratory:   this.renderLaboratory(),
+                    pharmacy:    this.renderPharmacy(),
+                    laboratory:  this.renderLaboratory(),
                     staff:        this.renderStaff()
                 };
                 return V[this.currentView] || '<div class="text-center p-8">Page not found</div>';
             }
 
             // -----------------------------------------------------------------
-            // EACH VIEW
+            // DASHBOARD
             // -----------------------------------------------------------------
             renderDashboard(stats) {
                 const today = new Date().toISOString().split('T')[0];
                 const todayApts = this.appointments.filter(a=>a.date===today);
                 return `
                     <div class="space-y-6">
-                        <!-- Stats -->
+                        <!-- Stats cards -->
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             <div class="stat-card bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                                 <div class="flex justify-between items-start">
@@ -924,7 +964,7 @@
                             </div>
                         </div>
 
-                        <!-- Today's appointments list -->
+                        <!-- Today's appointments -->
                         <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                             <div class="flex justify-between items-center mb-4">
                                 <h3 class="font-bold text-slate-800">Today's Appointments</h3>
@@ -947,9 +987,7 @@
                                             <p class="text-sm text-slate-500">${apt.doctor}</p>
                                         </div>
                                         <div class="flex gap-2">
-                                            ${apt.status!=='Completed' ? `
-                                                <button onclick="app.updateAppointmentStatus(${apt.id},'Completed')" class="p-2 text-green-600 hover:bg-green-50 rounded" title="Mark Complete"><i class="fas fa-check"></i></button>
-                                            ` : ''}
+                                            ${apt.status!=='Completed' ? `<button onclick="app.updateAppointmentStatus(${apt.id},'Completed')" class="p-2 text-green-600 hover:bg-green-50 rounded" title="Mark Complete"><i class="fas fa-check"></i></button>` : ''}
                                             <button onclick="app.showModal('appointment-modal',${JSON.stringify(apt).replace(/"/g,'&quot;')})" class="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Edit"><i class="fas fa-edit"></i></button>
                                         </div>
                                     </div>
@@ -960,6 +998,9 @@
                 `;
             }
 
+            // -----------------------------------------------------------------
+            // PATIENT LIST (now shows consulting doctor & charge)
+            // -----------------------------------------------------------------
             renderPatients() {
                 const filtered = this.searchTerm ?
                     this.patients.filter(p=>
@@ -967,6 +1008,7 @@
                         p.mrNumber.toLowerCase().includes(this.searchTerm.toLowerCase()) ||
                         p.contact.includes(this.searchTerm)
                     ) : this.patients;
+
                 return `
                     <div class="space-y-6">
                         <div class="flex flex-col sm:flex-row justify-between gap-4">
@@ -983,7 +1025,14 @@
                                     <table class="w-full text-left">
                                         <thead class="bg-slate-50 text-slate-600 text-sm font-semibold border-b border-slate-200">
                                             <tr>
-                                                <th class="p-4">MR Number</th><th class="p-4">Name</th><th class="p-4">Age/Gender</th><th class="p-4">Contact</th><th class="p-4">Registered</th><th class="p-4 text-center">Actions</th>
+                                                <th class="p-4">MR Number</th>
+                                                <th class="p-4">Name</th>
+                                                <th class="p-4">Age/Gender</th>
+                                                <th class="p-4">Contact</th>
+                                                <th class="p-4">Consulting Doctor</th>
+                                                <th class="p-4">Charge</th>
+                                                <th class="p-4">Registered</th>
+                                                <th class="p-4 text-center">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody class="divide-y divide-slate-100">
@@ -993,6 +1042,15 @@
                                                     <td class="p-4 font-medium">${p.name}</td>
                                                     <td class="p-4 text-slate-500">${p.age} / ${p.gender}</td>
                                                     <td class="p-4 text-slate-500">${p.contact}</td>
+                                                    <td class="p-4 text-slate-500">
+                                                        ${(() => {
+                                                            const doc = this.users.find(u=>u.id===p.doctorId);
+                                                            return doc ? doc.name : '-';
+                                                        })()}
+                                                    </td>
+                                                    <td class="p-4 text-slate-500">
+                                                        ${p.charge !== undefined ? this.formatCurrency(p.charge) : '-'}
+                                                    </td>
                                                     <td class="p-4 text-slate-500 text-sm">${p.registeredAt}</td>
                                                     <td class="p-4 text-center">
                                                         <div class="flex justify-center gap-2">
@@ -1016,6 +1074,9 @@
                 `;
             }
 
+            // -----------------------------------------------------------------
+            // APPOINTMENTS
+            // -----------------------------------------------------------------
             renderAppointments() {
                 return `
                     <div class="space-y-6">
@@ -1054,6 +1115,9 @@
                 `;
             }
 
+            // -----------------------------------------------------------------
+            // PRESCRIPTIONS (stock‑aware – unchanged)
+            // -----------------------------------------------------------------
             renderPrescriptions() {
                 return `
                     <div class="space-y-6">
@@ -1101,6 +1165,9 @@
                 `;
             }
 
+            // -----------------------------------------------------------------
+            // BILLING
+            // -----------------------------------------------------------------
             renderBilling() {
                 return `
                     <div class="space-y-6">
@@ -1155,6 +1222,9 @@
                 `;
             }
 
+            // -----------------------------------------------------------------
+            // PHARMACY
+            // -----------------------------------------------------------------
             renderPharmacy() {
                 const low = this.inventory.filter(i=>i.stock<50);
                 return `
@@ -1209,6 +1279,9 @@
                 `;
             }
 
+            // -----------------------------------------------------------------
+            // LABORATORY
+            // -----------------------------------------------------------------
             renderLaboratory() {
                 return `
                     <div class="space-y-6">
@@ -1261,6 +1334,9 @@
                 `;
             }
 
+            // -----------------------------------------------------------------
+            // STAFF
+            // -----------------------------------------------------------------
             renderStaff() {
                 if (this.currentUser.role!=='Admin') {
                     return '<div class="text-center p-8 text-red-500">Access denied. Admin privileges required.</div>';
@@ -1319,6 +1395,9 @@
                 `;
             }
 
+            // -----------------------------------------------------------------
+            // LOGIN SCREEN
+            // -----------------------------------------------------------------
             renderLogin() {
                 const appDiv = document.getElementById('app');
                 appDiv.innerHTML = `
@@ -1358,11 +1437,11 @@
             }
 
             // -----------------------------------------------------------------
-            // MODALS (all, with updated prescription modal)
+            // MODALS (all, with updated patient modal)
             // -----------------------------------------------------------------
             renderModals() {
                 return `
-                    <!-- Patient Modal -->
+                    <!-- Patient Modal (now includes consulting doctor & charge) -->
                     <div id="patient-modal" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 hidden">
                         <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 animate-in max-h-[90vh] overflow-y-auto">
                             <div class="flex justify-between items-center mb-6">
@@ -1385,8 +1464,16 @@
                                     </div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Contact Number *</label>
                                         <input type="tel" name="contact" value="${this.formData.contact||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Consulting Doctor *</label>
+                                        <select name="doctorId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                                            <option value="">Select Doctor</option>
+                                            ${this.users.filter(u=>u.role==='Doctor' || u.role==='Admin')
+                                                .map(d=>`<option value="${d.id}" ${this.formData.doctorId===d.id?'selected':''}>${d.name}</option>`).join('')}
+                                        </select></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Consultation Charge (Rs) *</label>
+                                        <input type="number" name="charge" value="${this.formData.charge||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" min="0" step="0.01" required></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Address</label>
-                                        <textarea name="address" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" rows="2">${this.formData.address||''}</textarea></div>
+                                        <textarea name="address" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" rows="2">${this.formData.address||''}</textarea></div>
                                     ${this.formData.mrNumber ? `<div><label class="block text-sm font-medium text-slate-700 mb-1">MR Number</label><input type="text" value="${this.formData.mrNumber}" class="w-full p-3 border rounded-lg bg-slate-100" readonly></div>` : ''}
                                     <div class="flex justify-end pt-4 gap-3">
                                         <button type="button" onclick="app.closeModal()" class="px-6 py-2 border border-slate-300 rounded-lg font-medium hover:bg-slate-50 transition">Cancel</button>
@@ -1420,17 +1507,19 @@
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Doctor *</label>
                                         <select name="doctor" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
                                             <option value="">Select Doctor</option>
-                                            ${this.users.filter(u=>u.role==='Doctor'||u.role==='Admin').map(d=>`<option value="${d.name}" ${this.formData.doctor===d.name?'selected':''}>${d.name}</option>`).join('')}
+                                            ${this.users.filter(u=>u.role==='Doctor' || u.role==='Admin')
+                                                .map(d=>`<option value="${d.name}" ${this.formData.doctor===d.name?'selected':''}>${d.name}</option>`).join('')}
                                         </select></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Notes</label>
                                         <textarea name="notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" rows="3">${this.formData.notes||''}</textarea></div>
-                                    ${this.editingId ? `<div><label class="block text-sm font-medium text-slate-700 mb-1">Status</label>
-                                        <select name="status" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-                                            <option value="Pending" ${this.formData.status==='Pending'?'selected':''}>Pending</option>
-                                            <option value="Confirmed" ${this.formData.status==='Confirmed'?'selected':''}>Confirmed</option>
-                                            <option value="Completed" ${this.formData.status==='Completed'?'selected':''}>Completed</option>
-                                            <option value="Cancelled" ${this.formData.status==='Cancelled'?'selected':''}>Cancelled</option>
-                                        </select></div>` : '' }
+                                    ${this.editingId ? `
+                                        <div><label class="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                                            <select name="status" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                                                <option value="Pending" ${this.formData.status==='Pending'?'selected':''}>Pending</option>
+                                                <option value="Confirmed" ${this.formData.status==='Confirmed'?'selected':''}>Confirmed</option>
+                                                <option value="Completed" ${this.formData.status==='Completed'?'selected':''}>Completed</option>
+                                                <option value="Cancelled" ${this.formData.status==='Cancelled'?'selected':''}>Cancelled</option>
+                                            </select></div>` : '' }
                                     <div class="flex justify-end pt-4 gap-3">
                                         <button type="button" onclick="app.closeModal()" class="px-6 py-2 border border-slate-300 rounded-lg font-medium hover:bg-slate-50 transition">Cancel</button>
                                         <button type="submit" class="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-purple-700 transition">${this.editingId?'Update':'Book'} Appointment</button>
@@ -1458,10 +1547,9 @@
                                         <input type="text" name="diagnosis" value="${this.formData.diagnosis||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Medicines *</label>
                                         <div id="prescription-meds-list" class="space-y-2"></div>
-                                        <button type="button" class="mt-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-2" onclick="app.addPrescriptionMedication()"><i class="fas fa-plus"></i> Add Medicine</button>
-                                    </div>
+                                        <button type="button" class="mt-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-2" onclick="app.addPrescriptionMedication()"><i class="fas fa-plus"></i> Add Medicine</button></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Additional Notes</label>
-                                        <textarea name="notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" rows="3">${this.formData.notes||''}</textarea></div>
+                                        <textarea name="notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" rows="3">${this.formData.notes||''}</textarea></div>
                                     <div class="flex justify-end pt-4 gap-3">
                                         <button type="button" onclick="app.closeModal()" class="px-6 py-2 border border-slate-300 rounded-lg font-medium hover:bg-slate-50 transition">Cancel</button>
                                         <button type="submit" class="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 transition">${this.editingId?'Update':'Save'} Prescription</button>
@@ -1496,12 +1584,12 @@
                                     </div>
                                     <div class="grid grid-cols-2 gap-4">
                                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Price (Rs) *</label>
-                                            <input type="number" name="price" value="${this.formData.price||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" min="0" step="0.01" required></div>
+                                            <input type="number" name="price" value="${this.formData.price||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" min="0" step="0.01" required></div>
                                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Expiry Date</label>
-                                            <input type="date" name="expiry" value="${this.formData.expiry||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"></div>
+                                            <input type="date" name="expiry" value="${this.formData.expiry||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none"></div>
                                     </div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Supplier</label>
-                                        <input type="text" name="supplier" value="${this.formData.supplier||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"></div>
+                                        <input type="text" name="supplier" value="${this.formData.supplier||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none"></div>
                                     <div class="flex justify-end pt-4 gap-3">
                                         <button type="button" onclick="app.closeModal()" class="px-6 py-2 border border-slate-300 rounded-lg font-medium hover:bg-slate-50 transition">Cancel</button>
                                         <button type="submit" class="bg-teal-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-teal-700 transition">${this.editingId?'Update':'Add'} Item</button>
@@ -1521,16 +1609,16 @@
                             <form id="invoice-form" onsubmit="event.preventDefault(); app.saveInvoice();">
                                 <div class="space-y-4">
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Select Patient *</label>
-                                        <select name="patientId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                                        <select name="patientId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required>
                                             <option value="">Select Patient</option>
                                             ${this.patients.map(p=>`<option value="${p.id}" ${this.formData.patientId===p.id?'selected':''}>${p.name} (${p.mrNumber})</option>`).join('')}
                                         </select></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Items Description *</label>
-                                        <textarea name="items" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" rows="3" placeholder="Consultation Fee, Lab Test, Medicines, etc." required>${this.formData.items||''}</textarea></div>
+                                        <textarea name="items" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" rows="3" placeholder="Consultation Fee, Lab Test, Medicines, etc." required>${this.formData.items||''}</textarea></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Amount (Rs) *</label>
-                                        <input type="number" name="amount" value="${this.formData.amount||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" min="0" step="0.01" required></div>
+                                        <input type="number" name="amount" value="${this.formData.amount||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" min="0" step="0.01" required></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Status</label>
-                                        <select name="status" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                                        <select name="status" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none">
                                             <option value="Pending" ${(this.formData.status||'Pending')==='Pending'?'selected':''}>Pending</option>
                                             <option value="Paid" ${(this.formData.status||'Pending')==='Paid'?'selected':''}>Paid</option>
                                             <option value="Cancelled" ${(this.formData.status||'Pending')==='Cancelled'?'selected':''}>Cancelled</option>
@@ -1554,22 +1642,22 @@
                             <form id="lab-form" onsubmit="event.preventDefault(); app.saveLabTest();">
                                 <div class="space-y-4">
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Select Patient *</label>
-                                        <select name="patientId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                                        <select name="patientId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required>
                                             <option value="">Select Patient</option>
                                             ${this.patients.map(p=>`<option value="${p.id}" ${this.formData.patientId===p.id?'selected':''}>${p.name} (${p.mrNumber})</option>`).join('')}
                                         </select></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Test Name *</label>
-                                        <input type="text" name="testName" value="${this.formData.testName||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required></div>
+                                        <input type="text" name="testName" value="${this.formData.testName||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Date *</label>
-                                        <input type="date" name="date" value="${this.formData.date||new Date().toISOString().split('T')[0]}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required></div>
+                                        <input type="date" name="date" value="${this.formData.date||new Date().toISOString().split('T')[0]}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Status</label>
-                                        <select name="status" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                                        <select name="status" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none">
                                             <option value="Pending" ${(this.formData.status||'Pending')==='Pending'?'selected':''}>Pending</option>
                                             <option value="In Progress" ${(this.formData.status||'Pending')==='In Progress'?'selected':''}>In Progress</option>
                                             <option value="Completed" ${(this.formData.status||'Pending')==='Completed'?'selected':''}>Completed</option>
                                         </select></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Results</label>
-                                        <textarea name="results" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" rows="3">${this.formData.results||''}</textarea></div>
+                                        <textarea name="results" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" rows="3">${this.formData.results||''}</textarea></div>
                                     <div class="flex justify-end pt-4 gap-3">
                                         <button type="button" onclick="app.closeModal()" class="px-6 py-2 border border-slate-300 rounded-lg font-medium hover:bg-slate-50 transition">Cancel</button>
                                         <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 transition">${this.editingId?'Update':'Add'} Test</button>
@@ -1589,17 +1677,17 @@
                             <form id="staff-form" onsubmit="event.preventDefault(); app.saveStaff();">
                                 <div class="space-y-4">
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Full Name *</label>
-                                        <input type="text" name="name" value="${this.formData.name||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required></div>
+                                        <input type="text" name="name" value="${this.formData.name||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required></div>
                                     <div class="grid grid-cols-2 gap-4">
                                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Username *</label>
-                                            <input type="text" name="username" value="${this.formData.username||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required></div>
+                                            <input type="text" name="username" value="${this.formData.username||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required></div>
                                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Email *</label>
-                                            <input type="email" name="email" value="${this.formData.email||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required></div>
+                                            <input type="email" name="email" value="${this.formData.email||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required></div>
                                     </div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Password ${this.editingId?'(leave blank to keep current)':'*'}</label>
-                                        <input type="password" name="password" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" ${this.editingId?'':'required'}></div>
+                                        <input type="password" name="password" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" ${this.editingId?'':'required'}></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Role *</label>
-                                        <select name="role" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                                        <select name="role" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required>
                                             <option value="Admin" ${(this.formData.role||'Staff')==='Admin'?'selected':''}>Admin</option>
                                             <option value="Doctor" ${(this.formData.role||'Staff')==='Doctor'?'selected':''}>Doctor</option>
                                             <option value="Pharmacist" ${(this.formData.role||'Staff')==='Pharmacist'?'selected':''}>Pharmacist</option>
@@ -1617,9 +1705,9 @@
             }
 
             // -----------------------------------------------------------------
-            // EVENT BINDING (none needed – inline handlers used)
+            // EVENT BINDING (none required – all inline)
             // -----------------------------------------------------------------
-            bindEvents() { /* No additional listeners required */ }
+            bindEvents() { /* No extra listeners needed */ }
         }
 
         // Initialise the app and expose it globally for inline handlers
