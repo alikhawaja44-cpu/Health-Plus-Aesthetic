@@ -34,7 +34,7 @@
 
     <script>
         // ======================================================================
-        // ClinicApp – complete single‑page clinic manager
+        // ClinicApp – complete single‑page clinic manager (now includes Petty Cash)
         // ======================================================================
         class ClinicApp {
             constructor() {
@@ -103,6 +103,9 @@
                     { id: 2, patientName: 'Robert Chen',   patientId: 2, testName: 'X-Ray Chest', date: '2024-03-18', status: 'In Progress', results: '' }
                 ];
 
+                // ---- PETTY CASH (daily expenses) ----
+                this.pettyCash = JSON.parse(localStorage.getItem('clinic_petty_cash')) || [];
+
                 this.currentUser = JSON.parse(localStorage.getItem('clinic_current_user')) || null;
             }
 
@@ -114,6 +117,8 @@
                 localStorage.setItem('clinic_prescriptions', JSON.stringify(this.prescriptions));
                 localStorage.setItem('clinic_invoices',      JSON.stringify(this.invoices));
                 localStorage.setItem('clinic_lab_tests',    JSON.stringify(this.labTests));
+                // ---- PETTY CASH ----
+                localStorage.setItem('clinic_petty_cash',    JSON.stringify(this.pettyCash));
                 localStorage.setItem('clinic_current_user',  JSON.stringify(this.currentUser));
             }
 
@@ -144,7 +149,9 @@
                                          .filter(i=>new Date(i.date).getMonth()===new Date().getMonth())
                                          .reduce((s,i)=>s+(Number(i.amount)||0),0),
                     lowStock:            this.inventory.filter(i=>i.stock<50).length,
-                    pendingAppointments:this.appointments.filter(a=>a.status==='Pending').length
+                    pendingAppointments:this.appointments.filter(a=>a.status==='Pending').length,
+                    // ---- PETTY CASH ----
+                    todayPettyCash:      this.pettyCash.filter(p=>p.date===today).reduce((s,p)=>s+(Number(p.amount)||0),0)
                 };
             }
 
@@ -782,6 +789,106 @@
             }
 
             // -----------------------------------------------------------------
+            // PETTY CASH (daily expense) – CRUD & render
+            // -----------------------------------------------------------------
+            savePettyCash() {
+                const f = document.getElementById('pettycash-form');
+                const fd = new FormData(f);
+                const data = {
+                    date: fd.get('date') || new Date().toISOString().split('T')[0],
+                    description: fd.get('description')?.trim() || '',
+                    amount: parseFloat(fd.get('amount')) || 0
+                };
+                if (!data.amount || isNaN(data.amount)) {
+                    this.showNotification('Please enter a valid amount','error');
+                    return;
+                }
+
+                if (this.editingId) {
+                    const ix = this.pettyCash.findIndex(p=>p.id===this.editingId);
+                    if (ix!==-1) {
+                        this.pettyCash[ix] = { ...this.pettyCash[ix], ...data };
+                        this.showNotification('Petty cash entry updated','success');
+                    }
+                } else {
+                    const newEntry = {
+                        id: Date.now(),
+                        ...data
+                    };
+                    this.pettyCash.unshift(newEntry);
+                    this.showNotification('Petty cash entry added','success');
+                }
+                this.saveData();
+                this.closeModal();
+                this.render();
+            }
+
+            deletePettyCash(id) {
+                if (confirm('Are you sure you want to delete this petty cash entry?')) {
+                    this.pettyCash = this.pettyCash.filter(p=>p.id!==id);
+                    this.saveData();
+                    this.render();
+                    this.showNotification('Petty cash entry deleted','success');
+                }
+            }
+
+            renderPettyCash() {
+                // Compute daily totals for the “Daily Total” column
+                const dailyTotals = this.pettyCash.reduce((map, e) => {
+                    const d = e.date;
+                    map[d] = (map[d]||0) + Number(e.amount||0);
+                    return map;
+                }, {});
+                return `
+                    <div class="space-y-6">
+                        <div class="flex justify-between items-center">
+                            <h3 class="font-bold text-slate-700">Petty Cash Expenses</h3>
+                            <button onclick="app.showModal('pettycash-modal')" class="bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 flex items-center gap-2"><i class="fas fa-plus"></i> Add Expense</button>
+                        </div>
+
+                        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                            ${this.pettyCash.length>0 ? `
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left">
+                                        <thead class="bg-slate-50 text-slate-600 text-sm font-semibold border-b border-slate-200">
+                                            <tr>
+                                                <th class="p-4">Date</th>
+                                                <th class="p-4">Description</th>
+                                                <th class="p-4">Amount (Rs)</th>
+                                                <th class="p-4">Daily Total (Rs)</th>
+                                                <th class="p-4 text-center">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100">
+                                            ${this.pettyCash.map(p=>`
+                                                <tr class="table-row">
+                                                    <td class="p-4">${p.date}</td>
+                                                    <td class="p-4 text-slate-500">${p.description||'-'}</td>
+                                                    <td class="p-4 font-bold">${this.formatCurrency(p.amount)}</td>
+                                                    <td class="p-4 font-bold">${this.formatCurrency(dailyTotals[p.date]||0)}</td>
+                                                    <td class="p-4 text-center">
+                                                        <div class="flex justify-center gap-2">
+                                                            <button onclick="app.showModal('pettycash-modal',${JSON.stringify(p).replace(/"/g,'&quot;')})" class="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Edit"><i class="fas fa-edit"></i></button>
+                                                            <button onclick="app.deletePettyCash(${p.id})" class="p-2 text-red-600 hover:bg-red-50 rounded" title="Delete"><i class="fas fa-trash"></i></button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ` : `
+                                <div class="p-8 text-center text-slate-500">
+                                    <i class="fas fa-wallet text-4xl text-slate-300 mb-3"></i>
+                                    <p>No petty cash entries recorded yet</p>
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // -----------------------------------------------------------------
             // FILTERS
             // -----------------------------------------------------------------
             filterPatients() {
@@ -862,7 +969,10 @@
                     {id:'prescriptions',icon:'fa-file-medical',label:'Prescriptions'},
                     {id:'billing',icon:'fa-receipt',label:'Billing'},
                     {id:'pharmacy',icon:'fa-pills',label:'Pharmacy'},
-                    {id:'laboratory',icon:'fa-flask',label:'Laboratory'}
+                    {id:'laboratory',icon:'fa-flask',label:'Laboratory'},
+                    // ---- PETTY CASH ----
+                    {id:'pettycash',icon:'fa-wallet',label:'Petty Cash'},
+                    // Manage Staff only for Admin
                 ];
                 if (this.currentUser.role==='Admin') navItems.push({id:'staff',icon:'fa-users-cog',label:'Manage Staff'});
 
@@ -878,13 +988,14 @@
             renderCurrentView(stats) {
                 const V = {
                     dashboard:    this.renderDashboard(stats),
-                    patients:     this.renderPatients(),
-                    appointments: this.renderAppointments(),
+                    patients:    this.renderPatients(),
+                    appointments:this.renderAppointments(),
                     prescriptions:this.renderPrescriptions(),
-                    billing:      this.renderBilling(),
+                    billing:     this.renderBilling(),
                     pharmacy:    this.renderPharmacy(),
                     laboratory:  this.renderLaboratory(),
-                    staff:        this.renderStaff()
+                    pettycash:   this.renderPettyCash(),
+                    staff:       this.renderStaff()
                 };
                 return V[this.currentView] || '<div class="text-center p-8">Page not found</div>';
             }
@@ -909,6 +1020,7 @@
                                     <div class="p-3 bg-blue-50 text-blue-600 rounded-lg"><i class="fas fa-user-injured text-xl"></i></div>
                                 </div>
                             </div>
+
                             <div class="stat-card bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                                 <div class="flex justify-between items-start">
                                     <div>
@@ -919,6 +1031,7 @@
                                     <div class="p-3 bg-purple-50 text-purple-600 rounded-lg"><i class="fas fa-calendar-check text-xl"></i></div>
                                 </div>
                             </div>
+
                             <div class="stat-card bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                                 <div class="flex justify-between items-start">
                                     <div>
@@ -929,6 +1042,7 @@
                                     <div class="p-3 bg-green-50 text-green-600 rounded-lg"><i class="fas fa-dollar-sign text-xl"></i></div>
                                 </div>
                             </div>
+
                             <div class="stat-card bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                                 <div class="flex justify-between items-start">
                                     <div>
@@ -937,6 +1051,18 @@
                                         <p class="text-xs text-slate-400 mt-1">Need restocking</p>
                                     </div>
                                     <div class="p-3 bg-red-50 text-red-600 rounded-lg"><i class="fas fa-exclamation-triangle text-xl"></i></div>
+                                </div>
+                            </div>
+
+                            <!-- NEW: Today's Petty Cash -->
+                            <div class="stat-card bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="text-slate-500 text-sm font-medium">Today's Petty Cash</p>
+                                        <h3 class="text-3xl font-bold text-slate-800 mt-1">${this.formatCurrency(stats.todayPettyCash)}</h3>
+                                        <p class="text-xs text-slate-400 mt-1">Cash expenses today</p>
+                                    </div>
+                                    <div class="p-3 bg-indigo-50 text-indigo-600 rounded-lg"><i class="fas fa-wallet text-xl"></i></div>
                                 </div>
                             </div>
                         </div>
@@ -960,6 +1086,10 @@
                                 <button onclick="app.showModal('invoice-modal')" class="p-4 border border-slate-200 rounded-lg hover:bg-slate-50 transition text-center">
                                     <i class="fas fa-receipt text-2xl text-orange-600 mb-2 block"></i>
                                     <span class="font-medium">Create Invoice</span>
+                                </button>
+                                <button onclick="app.showModal('pettycash-modal')" class="p-4 border border-slate-200 rounded-lg hover:bg-slate-50 transition text-center">
+                                    <i class="fas fa-wallet text-2xl text-indigo-600 mb-2 block"></i>
+                                    <span class="font-medium">Add Cash Expense</span>
                                 </button>
                             </div>
                         </div>
@@ -1437,7 +1567,7 @@
             }
 
             // -----------------------------------------------------------------
-            // MODALS (all, with updated patient modal)
+            // MODALS (all, with added Petty Cash modal)
             // -----------------------------------------------------------------
             renderModals() {
                 return `
@@ -1465,13 +1595,13 @@
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Contact Number *</label>
                                         <input type="tel" name="contact" value="${this.formData.contact||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Consulting Doctor *</label>
-                                        <select name="doctorId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                                        <select name="doctorId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required>
                                             <option value="">Select Doctor</option>
                                             ${this.users.filter(u=>u.role==='Doctor' || u.role==='Admin')
                                                 .map(d=>`<option value="${d.id}" ${this.formData.doctorId===d.id?'selected':''}>${d.name}</option>`).join('')}
                                         </select></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Consultation Charge (Rs) *</label>
-                                        <input type="number" name="charge" value="${this.formData.charge||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" min="0" step="0.01" required></div>
+                                        <input type="number" name="charge" value="${this.formData.charge||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" min="0" step="0.01" required></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Address</label>
                                         <textarea name="address" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" rows="2">${this.formData.address||''}</textarea></div>
                                     ${this.formData.mrNumber ? `<div><label class="block text-sm font-medium text-slate-700 mb-1">MR Number</label><input type="text" value="${this.formData.mrNumber}" class="w-full p-3 border rounded-lg bg-slate-100" readonly></div>` : ''}
@@ -1494,27 +1624,27 @@
                             <form id="appointment-form" onsubmit="event.preventDefault(); app.saveAppointment();">
                                 <div class="space-y-4">
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Select Patient *</label>
-                                        <select name="patientId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                                        <select name="patientId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required>
                                             <option value="">Select Patient</option>
                                             ${this.patients.map(p=>`<option value="${p.id}" ${this.formData.patientId===p.id?'selected':''}>${p.name} (${p.mrNumber})</option>`).join('')}
                                         </select></div>
                                     <div class="grid grid-cols-2 gap-4">
                                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Date *</label>
-                                            <input type="date" name="date" value="${this.formData.date||new Date().toISOString().split('T')[0]}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required></div>
+                                            <input type="date" name="date" value="${this.formData.date||new Date().toISOString().split('T')[0]}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required></div>
                                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Time *</label>
-                                            <input type="time" name="time" value="${this.formData.time||'09:00'}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required></div>
+                                            <input type="time" name="time" value="${this.formData.time||'09:00'}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required></div>
                                     </div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Doctor *</label>
-                                        <select name="doctor" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                                        <select name="doctor" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required>
                                             <option value="">Select Doctor</option>
                                             ${this.users.filter(u=>u.role==='Doctor' || u.role==='Admin')
                                                 .map(d=>`<option value="${d.name}" ${this.formData.doctor===d.name?'selected':''}>${d.name}</option>`).join('')}
                                         </select></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Notes</label>
-                                        <textarea name="notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" rows="3">${this.formData.notes||''}</textarea></div>
+                                        <textarea name="notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" rows="3">${this.formData.notes||''}</textarea></div>
                                     ${this.editingId ? `
                                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Status</label>
-                                            <select name="status" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <select name="status" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none">
                                                 <option value="Pending" ${this.formData.status==='Pending'?'selected':''}>Pending</option>
                                                 <option value="Confirmed" ${this.formData.status==='Confirmed'?'selected':''}>Confirmed</option>
                                                 <option value="Completed" ${this.formData.status==='Completed'?'selected':''}>Completed</option>
@@ -1539,12 +1669,12 @@
                             <form id="prescription-form" onsubmit="event.preventDefault(); app.savePrescription();">
                                 <div class="space-y-4">
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Select Patient *</label>
-                                        <select name="patientId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                                        <select name="patientId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required>
                                             <option value="">Select Patient</option>
                                             ${this.patients.map(p=>`<option value="${p.id}" ${this.formData.patientId===p.id?'selected':''}>${p.name} (${p.mrNumber})</option>`).join('')}
                                         </select></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Diagnosis *</label>
-                                        <input type="text" name="diagnosis" value="${this.formData.diagnosis||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required></div>
+                                        <input type="text" name="diagnosis" value="${this.formData.diagnosis||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Medicines *</label>
                                         <div id="prescription-meds-list" class="space-y-2"></div>
                                         <button type="button" class="mt-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-2" onclick="app.addPrescriptionMedication()"><i class="fas fa-plus"></i> Add Medicine</button></div>
@@ -1569,10 +1699,10 @@
                             <form id="inventory-form" onsubmit="event.preventDefault(); app.saveInventory();">
                                 <div class="space-y-4">
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Medicine Name *</label>
-                                        <input type="text" name="name" value="${this.formData.name||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required></div>
+                                        <input type="text" name="name" value="${this.formData.name||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required></div>
                                     <div class="grid grid-cols-2 gap-4">
                                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Type *</label>
-                                            <select name="type" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                                            <select name="type" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required>
                                                 <option value="Tablet" ${(this.formData.type||'Tablet')==='Tablet'?'selected':''}>Tablet</option>
                                                 <option value="Capsule" ${(this.formData.type||'Tablet')==='Capsule'?'selected':''}>Capsule</option>
                                                 <option value="Syrup" ${(this.formData.type||'Tablet')==='Syrup'?'selected':''}>Syrup</option>
@@ -1580,7 +1710,7 @@
                                                 <option value="Ointment" ${(this.formData.type||'Tablet')==='Ointment'?'selected':''}>Ointment</option>
                                             </select></div>
                                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Stock *</label>
-                                            <input type="number" name="stock" value="${this.formData.stock||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" min="0" required></div>
+                                            <input type="number" name="stock" value="${this.formData.stock||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" min="0" required></div>
                                     </div>
                                     <div class="grid grid-cols-2 gap-4">
                                         <div><label class="block text-sm font-medium text-slate-700 mb-1">Price (Rs) *</label>
@@ -1696,6 +1826,30 @@
                                     <div class="flex justify-end pt-4 gap-3">
                                         <button type="button" onclick="app.closeModal()" class="px-6 py-2 border border-slate-300 rounded-lg font-medium hover:bg-slate-50 transition">Cancel</button>
                                         <button type="submit" class="bg-gray-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-gray-700 transition">${this.editingId?'Update':'Add'} Staff</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Petty Cash Modal -->
+                    <div id="pettycash-modal" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 hidden">
+                        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-in max-h-[90vh] overflow-y-auto">
+                            <div class="flex justify-between items-center mb-6">
+                                <h3 class="text-xl font-bold">${this.editingId?'Edit Expense':'Add New Expense'}</h3>
+                                <button onclick="app.closeModal()" class="text-slate-400 text-xl"><i class="fas fa-times"></i></button>
+                            </div>
+                            <form id="pettycash-form" onsubmit="event.preventDefault(); app.savePettyCash();">
+                                <div class="space-y-4">
+                                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Date *</label>
+                                        <input type="date" name="date" value="${this.formData.date||new Date().toISOString().split('T')[0]}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" required></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                                        <textarea name="description" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" rows="2">${this.formData.description||''}</textarea></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Amount (Rs) *</label>
+                                        <input type="number" name="amount" value="${this.formData.amount||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" min="0" step="0.01" required></div>
+                                    <div class="flex justify-end pt-4 gap-3">
+                                        <button type="button" onclick="app.closeModal()" class="px-6 py-2 border border-slate-300 rounded-lg font-medium hover:bg-slate-50 transition">Cancel</button>
+                                        <button type="submit" class="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 transition">${this.editingId?'Update':'Add'} Expense</button>
                                     </div>
                                 </div>
                             </form>
