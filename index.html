@@ -87,7 +87,7 @@
 
     <script>
         // ======================================================================
-        // ClinicApp – complete single‑page clinic manager (v2.0)
+        // ClinicApp – complete single‑page clinic manager (v2.1)
         // ======================================================================
         class ClinicApp {
             constructor() {
@@ -158,9 +158,16 @@
 
                 // Lab tests
                 this.labTests = JSON.parse(localStorage.getItem('clinic_lab_tests')) || [
-                    { id: 1, patientName: 'Alice Johnson', patientId: 1, testName: 'Blood Test', date: '2024-03-15', status: 'Completed', results: 'Normal ranges' },
-                    { id: 2, patientName: 'Robert Chen',   patientId: 2, testName: 'X-Ray Chest', date: '2024-03-18', status: 'In Progress', results: '' },
-                    { id: 3, patientName: 'David Wilson',  patientId: 4, testName: 'ECG', date: '2024-03-22', status: 'Pending', results: '' }
+                    { id: 1, patientName: 'Alice Johnson', patientId: 1, testName: 'Blood Test', date: '2024-03-15', status: 'Completed', results: 'Normal ranges', price: 500 },
+                    { id: 2, patientName: 'Robert Chen',   patientId: 2, testName: 'X-Ray Chest', date: '2024-03-18', status: 'In Progress', results: '', price: 800 },
+                    { id: 3, patientName: 'David Wilson',  patientId: 4, testName: 'ECG', date: '2024-03-22', status: 'Pending', results: '', price: 300 }
+                ];
+
+                // Petty Cash
+                this.pettyCash = JSON.parse(localStorage.getItem('clinic_petty_cash')) || [
+                    { id: 1, date: '2024-03-10', amount: 250, category: 'Office Supplies', description: 'Pens, paper, and notebooks', addedBy: 'Dr. John Smith' },
+                    { id: 2, date: '2024-03-15', amount: 150, category: 'Maintenance', description: 'Light bulb replacement', addedBy: 'Dr. Sarah Johnson' },
+                    { id: 3, date: '2024-03-18', amount: 450, category: 'Office Supplies', description: 'Printer toner', addedBy: 'Dr. John Smith' }
                 ];
 
                 // Add new appointments for better demonstration
@@ -191,7 +198,8 @@
                 localStorage.setItem('clinic_inventory',     JSON.stringify(this.inventory));
                 localStorage.setItem('clinic_prescriptions', JSON.stringify(this.prescriptions));
                 localStorage.setItem('clinic_invoices',      JSON.stringify(this.invoices));
-                localStorage.setItem('clinic_lab_tests',    JSON.stringify(this.labTests));
+                localStorage.setItem('clinic_lab_tests',     JSON.stringify(this.labTests));
+                localStorage.setItem('clinic_petty_cash',    JSON.stringify(this.pettyCash));
                 localStorage.setItem('clinic_current_user',  JSON.stringify(this.currentUser));
                 localStorage.setItem('clinic_dark_mode',     this.darkMode);
             }
@@ -217,6 +225,17 @@
                 const month = new Date().getMonth();
                 const year = new Date().getFullYear();
                 
+                // Calculate lab revenue
+                const labRevenue = this.labTests.reduce((sum, test) => {
+                    if (test.status === 'Completed' && test.price) {
+                        return sum + Number(test.price);
+                    }
+                    return sum;
+                }, 0);
+
+                // Calculate petty cash
+                const pettyCashTotal = this.pettyCash.reduce((sum, entry) => sum + Number(entry.amount), 0);
+                
                 return {
                     totalPatients:       this.patients.length,
                     todayAppointments:   this.appointments.filter(a=>a.date===today).length,
@@ -225,6 +244,8 @@
                     monthlyRevenue:      this.invoices
                                          .filter(i=>new Date(i.date).getMonth()===month && new Date(i.date).getFullYear()===year)
                                          .reduce((s,i)=>s+(Number(i.amount)||0),0),
+                    labRevenue:          labRevenue,
+                    pettyCashTotal:      pettyCashTotal,
                     lowStock:            this.inventory.filter(i=>i.stock <= i.lowStockThreshold).length,
                     pendingAppointments: this.appointments.filter(a=>a.status==='Pending').length,
                     totalDoctors:        this.users.filter(u => u.role === 'Doctor').length,
@@ -807,7 +828,8 @@
                     testName:    fd.get('testName'),
                     date:        fd.get('date'),
                     results:     fd.get('results'),
-                    status:      fd.get('status')
+                    status:      fd.get('status'),
+                    price:       parseFloat(fd.get('price')) || 0
                 };
                 if (!data.patientName||!data.testName||!data.date) {
                     this.showNotification('Please fill in all required fields','error');
@@ -835,6 +857,48 @@
                     this.saveData();
                     this.render();
                     this.showNotification('Lab test deleted successfully','success');
+                }
+            }
+
+            // -----------------------------------------------------------------
+            // PETTY CASH
+            // -----------------------------------------------------------------
+            savePettyCash() {
+                const f = document.getElementById('petty-cash-form');
+                const fd = new FormData(f);
+                const data = {
+                    date:        fd.get('date'),
+                    amount:      parseFloat(fd.get('amount')),
+                    category:    fd.get('category'),
+                    description: fd.get('description'),
+                    addedBy:     this.currentUser.name
+                };
+                if (!data.date || !data.amount || !data.category || !data.description) {
+                    this.showNotification('Please fill in all required fields','error');
+                    return;
+                }
+                if (this.editingId) {
+                    const ix = this.pettyCash.findIndex(p=>p.id===this.editingId);
+                    if (ix!==-1) {
+                        this.pettyCash[ix] = {...this.pettyCash[ix],...data};
+                        this.showNotification('Petty cash entry updated successfully','success');
+                    }
+                } else {
+                    const newEntry = { id: Date.now(), ...data };
+                    this.pettyCash.unshift(newEntry);
+                    this.showNotification('Petty cash entry added successfully','success');
+                }
+                this.saveData();
+                this.closeModal();
+                this.render();
+            }
+
+            deletePettyCash(id) {
+                if (confirm('Are you sure you want to delete this petty cash entry?')) {
+                    this.pettyCash = this.pettyCash.filter(p=>p.id!==id);
+                    this.saveData();
+                    this.render();
+                    this.showNotification('Petty cash entry deleted successfully','success');
                 }
             }
 
@@ -991,7 +1055,8 @@
                     {id:'prescriptions',icon:'fa-file-medical',label:'Prescriptions'},
                     {id:'billing',icon:'fa-receipt',label:'Billing'},
                     {id:'pharmacy',icon:'fa-pills',label:'Pharmacy'},
-                    {id:'laboratory',icon:'fa-flask',label:'Laboratory'}
+                    {id:'laboratory',icon:'fa-flask',label:'Laboratory'},
+                    {id:'petty-cash',icon:'fa-money-bill-wave',label:'Petty Cash'}
                 ];
                 if (this.currentUser.role==='Admin') navItems.push({id:'staff',icon:'fa-users-cog',label:'Manage Staff'});
 
@@ -1013,6 +1078,7 @@
                     billing:      this.renderBilling(),
                     pharmacy:    this.renderPharmacy(),
                     laboratory:  this.renderLaboratory(),
+                    'petty-cash': this.renderPettyCash(),
                     staff:        this.renderStaff()
                 };
                 return V[this.currentView] || '<div class="text-center p-8">Page not found</div>';
@@ -1051,9 +1117,9 @@
                             <div class="stat-card bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                                 <div class="flex justify-between items-start">
                                     <div>
-                                        <p class="text-slate-500 text-sm font-medium">Monthly Revenue</p>
-                                        <h3 class="text-3xl font-bold text-slate-800 mt-1">${this.formatCurrency(stats.monthlyRevenue)}</h3>
-                                        <p class="text-xs text-slate-400 mt-1">This month's income</p>
+                                        <p class="text-slate-500 text-sm font-medium">Total Revenue</p>
+                                        <h3 class="text-3xl font-bold text-slate-800 mt-1">${this.formatCurrency(stats.revenue + stats.labRevenue)}</h3>
+                                        <p class="text-xs text-slate-400 mt-1">Total clinic revenue</p>
                                     </div>
                                     <div class="p-3 bg-green-50 text-green-600 rounded-lg"><i class="fas fa-dollar-sign text-xl"></i></div>
                                 </div>
@@ -1071,7 +1137,7 @@
                         </div>
 
                         <!-- Charts row -->
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             <!-- Appointment status chart -->
                             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                                 <h3 class="font-bold text-slate-800 mb-4">Appointment Status Distribution</h3>
@@ -1085,6 +1151,14 @@
                                 <h3 class="font-bold text-slate-800 mb-4">Monthly Revenue Trend</h3>
                                 <div class="h-64">
                                     <canvas id="revenueChart"></canvas>
+                                </div>
+                            </div>
+                            
+                            <!-- Lab Revenue Chart -->
+                            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                                <h3 class="font-bold text-slate-800 mb-4">Petty Cash Activity</h3>
+                                <div class="h-64">
+                                    <canvas id="pettyCashChart"></canvas>
                                 </div>
                             </div>
                         </div>
@@ -1447,7 +1521,7 @@
                                     <table class="w-full text-left">
                                         <thead class="bg-slate-50 text-slate-600 text-sm font-semibold border-b border-slate-200">
                                             <tr>
-                                                <th class="p-4">Patient</th><th class="p-4">Test Name</th><th class="p-4">Date</th><th class="p-4">Status</th><th class="p-4 text-center">Actions</th>
+                                                <th class="p-4">Patient</th><th class="p-4">Test Name</th><th class="p-4">Date</th><th class="p-4">Status</th><th class="p-4">Price</th><th class="p-4 text-center">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody class="divide-y divide-slate-100">
@@ -1463,6 +1537,7 @@
                                                             'bg-blue-100 text-blue-700'
                                                         }">${t.status}</span>
                                                     </td>
+                                                    <td class="p-4 font-bold">${this.formatCurrency(t.price)}</td>
                                                     <td class="p-4 text-center">
                                                         <div class="flex justify-center gap-2">
                                                             <button onclick="app.showModal('lab-modal',${JSON.stringify(t).replace(/"/g,'&quot;')})" class="p-2 text-indigo-600 hover:bg-indigo-50 rounded" title="Edit"><i class="fas fa-edit"></i></button>
@@ -1478,6 +1553,66 @@
                                 <div class="p-8 text-center text-slate-500">
                                     <i class="fas fa-flask text-4xl text-slate-300 mb-3"></i>
                                     <p>No lab tests recorded yet</p>
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // -----------------------------------------------------------------
+            // PETTY CASH
+            // -----------------------------------------------------------------
+            renderPettyCash() {
+                const totalAmount = this.pettyCash.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+                return `
+                    <div class="space-y-6">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <h3 class="font-bold text-slate-700">Petty Cash Management</h3>
+                                <p class="text-sm text-slate-500 mt-1">Total in petty cash: ${this.formatCurrency(totalAmount)}</p>
+                            </div>
+                            <button onclick="app.showModal('petty-cash-modal')" class="bg-yellow-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-yellow-700 flex items-center gap-2"><i class="fas fa-plus"></i> Add Entry</button>
+                        </div>
+
+                        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                            ${this.pettyCash.length>0 ? `
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left">
+                                        <thead class="bg-slate-50 text-slate-600 text-sm font-semibold border-b border-slate-200">
+                                            <tr>
+                                                <th class="p-4">Date</th><th class="p-4">Amount</th><th class="p-4">Category</th><th class="p-4">Description</th><th class="p-4">Added By</th><th class="p-4 text-center">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100">
+                                            ${this.pettyCash.map(entry=>`
+                                                <tr class="table-row">
+                                                    <td class="p-4 text-slate-500">${entry.date}</td>
+                                                    <td class="p-4 font-bold">${this.formatCurrency(entry.amount)}</td>
+                                                    <td class="p-4">
+                                                        <span class="px-2 py-1 rounded text-xs font-bold ${
+                                                            entry.category === 'Office Supplies' ? 'bg-blue-100 text-blue-700' :
+                                                            entry.category === 'Maintenance' ? 'bg-purple-100 text-purple-700' :
+                                                            'bg-gray-100 text-gray-700'
+                                                        }">${entry.category}</span>
+                                                    </td>
+                                                    <td class="p-4">${entry.description}</td>
+                                                    <td class="p-4 text-slate-500">${entry.addedBy}</td>
+                                                    <td class="p-4 text-center">
+                                                        <div class="flex justify-center gap-2">
+                                                            <button onclick="app.showModal('petty-cash-modal',${JSON.stringify(entry).replace(/"/g,'&quot;')})" class="p-2 text-yellow-600 hover:bg-yellow-50 rounded" title="Edit"><i class="fas fa-edit"></i></button>
+                                                            <button onclick="app.deletePettyCash(${entry.id})" class="p-2 text-red-600 hover:bg-red-50 rounded" title="Delete"><i class="fas fa-trash"></i></button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ` : `
+                                <div class="p-8 text-center text-slate-500">
+                                    <i class="fas fa-money-bill-wave text-4xl text-slate-300 mb-3"></i>
+                                    <p>No petty cash entries recorded yet</p>
                                 </div>
                             `}
                         </div>
@@ -1820,11 +1955,45 @@
                                             <option value="In Progress" ${(this.formData.status||'Pending')==='In Progress'?'selected':''}>In Progress</option>
                                             <option value="Completed" ${(this.formData.status||'Pending')==='Completed'?'selected':''}>Completed</option>
                                         </select></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Price (Rs)</label>
+                                        <input type="number" name="price" value="${this.formData.price || 0}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" min="0" step="0.01"></div>
                                     <div><label class="block text-sm font-medium text-slate-700 mb-1">Results</label>
                                         <textarea name="results" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" rows="3">${this.formData.results||''}</textarea></div>
                                     <div class="flex justify-end pt-4 gap-3">
                                         <button type="button" onclick="app.closeModal()" class="px-6 py-2 border border-slate-300 rounded-lg font-medium hover:bg-slate-50 transition">Cancel</button>
                                         <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 transition">${this.editingId?'Update':'Add'} Test</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Petty Cash Modal -->
+                    <div id="petty-cash-modal" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 hidden">
+                        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 animate-in max-h-[90vh] overflow-y-auto">
+                            <div class="flex justify-between items-center mb-6">
+                                <h3 class="text-xl font-bold">${this.editingId?'Edit Petty Cash Entry':'Add New Petty Cash Entry'}</h3>
+                                <button onclick="app.closeModal()" class="text-slate-400 text-xl"><i class="fas fa-times"></i></button>
+                            </div>
+                            <form id="petty-cash-form" onsubmit="event.preventDefault(); app.savePettyCash();">
+                                <div class="space-y-4">
+                                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Date *</label>
+                                        <input type="date" name="date" value="${this.formData.date || new Date().toISOString().split('T')[0]}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Amount (Rs) *</label>
+                                        <input type="number" name="amount" value="${this.formData.amount || ''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" min="0" step="0.01" required></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Category *</label>
+                                        <select name="category" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required>
+                                            <option value="Office Supplies" ${this.formData.category==='Office Supplies'?'selected':''}>Office Supplies</option>
+                                            <option value="Maintenance" ${this.formData.category==='Maintenance'?'selected':''}>Maintenance</option>
+                                            <option value="Medical Supplies" ${this.formData.category==='Medical Supplies'?'selected':''}>Medical Supplies</option>
+                                            <option value="Transportation" ${this.formData.category==='Transportation'?'selected':''}>Transportation</option>
+                                            <option value="Miscellaneous" ${this.formData.category==='Miscellaneous'?'selected':''}>Miscellaneous</option>
+                                        </select></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 mb-1">Description *</label>
+                                        <textarea name="description" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none" rows="3" required>${this.formData.description||''}</textarea></div>
+                                    <div class="flex justify-end pt-4 gap-3">
+                                        <button type="button" onclick="app.closeModal()" class="px-6 py-2 border border-slate-300 rounded-lg font-medium hover:bg-slate-50 transition">Cancel</button>
+                                        <button type="submit" class="bg-yellow-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-yellow-700 transition">${this.editingId?'Update':'Add'} Entry</button>
                                     </div>
                                 </div>
                             </form>
@@ -1970,6 +2139,44 @@
                             plugins: {
                                 legend: {
                                     display: false
+                                }
+                            }
+                        }
+                    });
+                }
+                
+                // Petty Cash Chart
+                const pettyCashCtx = document.getElementById('pettyCashChart')?.getContext('2d');
+                if (pettyCashCtx) {
+                    // Group petty cash entries by category
+                    const categories = {};
+                    this.pettyCash.forEach(entry => {
+                        const category = entry.category || 'Miscellaneous';
+                        if (!categories[category]) {
+                            categories[category] = 0;
+                        }
+                        categories[category] += Number(entry.amount) || 0;
+                    });
+                    
+                    const chartLabels = Object.keys(categories);
+                    const chartData = Object.values(categories);
+                    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6'];
+                    
+                    new Chart(pettyCashCtx, {
+                        type: 'pie',
+                        data: {
+                            labels: chartLabels,
+                            datasets: [{
+                                data: chartData,
+                                backgroundColor: colors
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    position: 'right'
                                 }
                             }
                         }
