@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Health+ Clinic Manager Pro</title>
+
+    <!-- --------- New: SVG favicon (no external fetch) --------- -->
+    <link rel="icon"
+          href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>💊</text></svg>"
+          type="image/svg+xml">
+
     <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- Toast UI – Notyf -->
@@ -12,7 +18,8 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         @media print { .no-print { display: none !important; } }
 
@@ -33,7 +40,7 @@
         }
         .table-row:hover { background-color:#f8fafc; }
 
-        /* Dark‑mode overrides for Tailwind‑generated classes */
+        /* Dark‑mode overrides (Tailwind generated classes) */
         .dark .bg-white          { background-color:#1e293b; }
         .dark .bg-slate-50       { background-color:#0f172a; }
         .dark .border-slate-200  { border-color:#334155; }
@@ -59,15 +66,15 @@
 
     <script>
         // ======================================================================
-        // ClinicApp – complete single‑page clinic manager (now includes Dark‑mode,
-        // Toast UI, Export/Import & Audit‑log)
+        // ClinicApp – complete single‑page clinic manager (dark‑mode, toast UI,
+        // export/import, audit‑log, and a proper favicon)
         // ======================================================================
         class ClinicApp {
             constructor() {
                 this.currentView   = 'dashboard';
                 this.currentUser   = null;
                 this.isSidebarOpen = false;
-                this.isDark        = JSON.parse(localStorage.getItem('clinic_dark')||'false');
+                this.isDark  = JSON.parse(localStorage.getItem('clinic_dark')||'false');
                 this.formData      = {};
                 this.editingId     = null;
                 this.searchTerm    = '';
@@ -207,7 +214,7 @@
                     revenue:             this.invoices.reduce((s,i)=>s+(Number(i.amount)||0),0),
                     monthlyRevenue:      this.invoices
                                          .filter(i=>new Date(i.date).getMonth()===new Date().getMonth())
-                                         .reduce((s,i)=>s+(Number(i.amount)||0),0,
+                                         .reduce((s,i)=>s+(Number(i.amount)||0),0),
                     lowStock:            this.inventory.filter(i=>i.stock<50).length,
                     pendingAppointments:this.appointments.filter(a=>a.status==='Pending').length,
                     todayPettyCash:      this.pettyCash.filter(p=>p.date===today).reduce((s,p)=>s+(Number(p.amount)||0),0)
@@ -336,494 +343,10 @@
                     }
                 };
                 reader.readAsText(file);
-                // reset input so the same file can be selected again
                 event.target.value = '';
             }
 
-            // -----------------------------------------------------------------
-            // PATIENT MANAGEMENT (now records consulting doctor & charge)
-            // -----------------------------------------------------------------
-            savePatient() {
-                const f = document.getElementById('patient-form');
-                const fd = new FormData(f);
-                const data = {
-                    name:    fd.get('name'),
-                    age:     fd.get('age'),
-                    gender:  fd.get('gender'),
-                    contact: fd.get('contact'),
-                    address: fd.get('address'),
-                    doctorId: parseInt(fd.get('doctorId')),
-                    charge:   parseFloat(fd.get('charge'))
-                };
-                // basic validation
-                if (!data.name || !data.age || !data.contact) {
-                    this.showNotification('Please fill in all required fields','error');
-                    return;
-                }
-                if (isNaN(data.doctorId) || isNaN(data.charge)) {
-                    this.showNotification('Please select a doctor and enter a valid charge','error');
-                    return;
-                }
-
-                if (this.editingId) {
-                    const ix = this.patients.findIndex(p=>p.id===this.editingId);
-                    if (ix!==-1) {
-                        this.patients[ix] = { ...this.patients[ix], ...data };
-                        this.showNotification('Patient updated successfully','success');
-                        this.logAction('Patient Updated', `ID ${this.editingId}`);
-                    }
-                } else {
-                    const newPatient = {
-                        id: Date.now(),
-                        mrNumber: this.generateMR(),
-                        ...data,
-                        registeredAt: new Date().toISOString().split('T')[0]
-                    };
-                    this.patients.unshift(newPatient);
-                    this.showNotification('Patient registered successfully','success');
-                    this.logAction('Patient Created', `ID ${newPatient.id}`);
-                }
-                this.saveData();
-                this.closeModal();
-                this.render();
-            }
-
-            deletePatient(id) {
-                if (confirm('Are you sure you want to delete this patient?')) {
-                    this.patients = this.patients.filter(p=>p.id!==id);
-                    this.saveData();
-                    this.showNotification('Patient deleted successfully','success');
-                    this.logAction('Patient Deleted', `ID ${id}`);
-                    this.render();
-                }
-            }
-
-            // -----------------------------------------------------------------
-            // APPOINTMENTS
-            // -----------------------------------------------------------------
-            saveAppointment() {
-                const f = document.getElementById('appointment-form');
-                const fd = new FormData(f);
-                const data = {
-                    patientId: parseInt(fd.get('patientId')),
-                    date:      fd.get('date'),
-                    time:      fd.get('time'),
-                    doctor:    fd.get('doctor'),
-                    notes:     fd.get('notes')
-                };
-                if (!data.patientId||!data.date||!data.time||!data.doctor) {
-                    this.showNotification('Please fill in all required fields','error');
-                    return;
-                }
-                const pat = this.patients.find(p=>p.id===data.patientId);
-                data.patientName = pat ? pat.name : 'Unknown';
-
-                if (this.editingId) {
-                    const ix = this.appointments.findIndex(a=>a.id===this.editingId);
-                    if (ix!==-1) {
-                        this.appointments[ix] = { ...this.appointments[ix], ...data };
-                        this.showNotification('Appointment updated successfully','success');
-                        this.logAction('Appointment Updated', `ID ${this.editingId}`);
-                    }
-                } else {
-                    const token = this.appointments.filter(a=>a.date===data.date).length+1;
-                    const newAppt = {
-                        id: Date.now(),
-                        token,
-                        status: 'Pending',
-                        ...data
-                    };
-                    this.appointments.unshift(newAppt);
-                    this.showNotification('Appointment booked successfully','success');
-                    this.logAction('Appointment Created', `ID ${newAppt.id}`);
-                }
-                this.saveData();
-                this.closeModal();
-                this.render();
-            }
-
-            updateAppointmentStatus(id,status) {
-                const a = this.appointments.find(ap=>ap.id===id);
-                if (a) {
-                    const old = a.status;
-                    a.status = status;
-                    this.saveData();
-                    this.render();
-                    this.showNotification(`Appointment marked as ${status}`,'success');
-                    this.logAction('Appointment Status Changed', `ID ${id}: ${old} → ${status}`);
-                }
-            }
-
-            deleteAppointment(id) {
-                if (confirm('Are you sure you want to delete this appointment?')) {
-                    this.appointments = this.appointments.filter(a=>a.id!==id);
-                    this.saveData();
-                    this.showNotification('Appointment deleted successfully','success');
-                    this.logAction('Appointment Deleted', `ID ${id}`);
-                    this.render();
-                }
-            }
-
-            // -----------------------------------------------------------------
-            // PRESCRIPTIONS (stock‑aware)
-            // -----------------------------------------------------------------
-            deletePrescription(id) {
-                if (confirm('Are you sure you want to delete this prescription?')) {
-                    this.prescriptions = this.prescriptions.filter(p=>p.id!==id);
-                    this.saveData();
-                    this.showNotification('Prescription deleted successfully','success');
-                    this.logAction('Prescription Deleted', `ID ${id}`);
-                    this.render();
-                }
-            }
-
-            // ----- Helpers for dynamic medicine list -----
-            addPrescriptionMedication(med={}) {
-                const container = document.getElementById('prescription-meds-list');
-                if (!container) return;
-                const rowId = `med-row-${Date.now()}-${Math.random().toString(36).substr(2,5)}`;
-                const selId = med.medicineId || '';
-                const qty   = med.quantity   || '';
-                const row   = document.createElement('div');
-                row.id      = rowId;
-                row.className = 'flex items-center gap-2 mb-2';
-                row.innerHTML = `
-                    <select class="border rounded p-1 w-5/12 bg-white"
-                            onchange="app.updatePrescriptionMedStock('${rowId}', this.value)">
-                        <option value="">Select Medicine</option>
-                        ${this.inventory.map(i=>`
-                            <option value="${i.id}" ${i.id==selId?'selected':''}>${i.name} (${i.type})</option>
-                        `).join('')}
-                    </select>
-                    <input type="number" class="border rounded p-1 w-24" placeholder="Qty" min="1" value="${qty}">
-                    <span class="text-xs text-slate-500" id="${rowId}-stock"></span>
-                    <button type="button" class="text-red-600" onclick="app.removePrescriptionMedication('${rowId}')"><i class="fas fa-trash"></i></button>
-                `;
-                container.appendChild(row);
-                if (selId) this.updatePrescriptionMedStock(rowId, selId);
-            }
-
-            removePrescriptionMedication(rowId) {
-                const r = document.getElementById(rowId);
-                if (r) r.remove();
-            }
-
-            updatePrescriptionMedStock(rowId, medId) {
-                const stockSpan = document.getElementById(`${rowId}-stock`);
-                const med = this.inventory.find(i=>i.id==medId);
-                stockSpan.textContent = med ? `Stock: ${med.stock}` : '';
-            }
-
-            renderPrescriptionMedicationRows() {
-                const container = document.getElementById('prescription-meds-list');
-                if (!container) return;
-                container.innerHTML = '';
-                const meds = this.formData.medicinesList || [];
-                if (meds.length===0) {
-                    this.addPrescriptionMedication();
-                } else {
-                    meds.forEach(m=>this.addPrescriptionMedication(m));
-                }
-            }
-
-            // ----- Save prescription (with stock check) -----
-            savePrescription() {
-                const f = document.getElementById('prescription-form');
-                const fd = new FormData(f);
-                const patientId   = parseInt(fd.get('patientId'));
-                const patientObj  = this.patients.find(p=>p.id===patientId);
-                const patientName = patientObj ? patientObj.name : '';
-                const diagnosis   = fd.get('diagnosis')?.trim() || '';
-                const notes       = fd.get('notes')?.trim() || '';
-
-                if (!patientName || !diagnosis) {
-                    this.showNotification('Please fill in all required fields.', 'error');
-                    return;
-                }
-
-                // Gather medicines from UI
-                const medRows = document.querySelectorAll('#prescription-meds-list > div');
-                const meds = [];
-                for (let row of medRows) {
-                    const sel   = row.querySelector('select');
-                    const qtyIn = row.querySelector('input');
-                    const medId = parseInt(sel.value);
-                    const qty   = parseInt(qtyIn.value);
-                    if (!medId || isNaN(qty) || qty<=0) {
-                        this.showNotification('Select a medicine and enter a valid quantity for each line.', 'error');
-                        return;
-                    }
-                    const invItem = this.inventory.find(i=>i.id===medId);
-                    if (!invItem) {
-                        this.showNotification('Medicine not found in inventory.', 'error');
-                        return;
-                    }
-                    if (qty>invItem.stock) {
-                        this.showNotification(`Insufficient stock for ${invItem.name}. Available: ${invItem.stock}`, 'error');
-                        return;
-                    }
-                    meds.push({
-                        medicineId: medId,
-                        name:       invItem.name,
-                        type:       invItem.type,
-                        quantity:   qty
-                    });
-                }
-
-                if (meds.length===0) {
-                    this.showNotification('Please add at least one medicine.', 'error');
-                    return;
-                }
-
-                // Restore old stock if editing
-                if (this.editingId) {
-                    const existing = this.prescriptions.find(p=>p.id===this.editingId);
-                    if (existing && existing.medicinesList) {
-                        existing.medicinesList.forEach(m=>{
-                            const inv = this.inventory.find(i=>i.id===m.medicineId);
-                            if (inv) inv.stock += m.quantity;
-                        });
-                    }
-                }
-
-                // Deduct new stock
-                meds.forEach(m=>{
-                    const inv = this.inventory.find(i=>i.id===m.medicineId);
-                    if (inv) inv.stock -= m.quantity;
-                });
-
-                // Printable string
-                const medicinesString = meds.map(m=>`${m.name} - ${m.quantity} ${m.type}${m.quantity>1?'s':''}`).join('\\n');
-
-                const prescData = {
-                    patientName,
-                    patientId,
-                    diagnosis,
-                    notes,
-                    medicines: medicinesString,
-                    medicinesList: meds,
-                    doctor: this.currentUser.name,
-                    date: new Date().toISOString().split('T')[0]
-                };
-
-                if (this.editingId) {
-                    const ix = this.prescriptions.findIndex(p=>p.id===this.editingId);
-                    if (ix!==-1) {
-                        this.prescriptions[ix] = { ...this.prescriptions[ix], ...prescData };
-                        this.showNotification('Prescription updated successfully','success');
-                        this.logAction('Prescription Updated', `ID ${this.editingId}`);
-                    }
-                } else {
-                    const newPresc = { id: Date.now(), ...prescData };
-                    this.prescriptions.unshift(newPresc);
-                    this.showNotification('Prescription saved successfully','success');
-                    this.logAction('Prescription Created', `ID ${newPresc.id}`);
-                }
-
-                this.saveData();
-                this.closeModal();
-                this.render();
-            }
-
-            // -----------------------------------------------------------------
-            // INVENTORY
-            // -----------------------------------------------------------------
-            saveInventory() {
-                const f = document.getElementById('inventory-form');
-                const fd = new FormData(f);
-                const data = {
-                    name:     fd.get('name'),
-                    type:     fd.get('type'),
-                    stock:    parseInt(fd.get('stock')),
-                    price:    parseFloat(fd.get('price')),
-                    supplier: fd.get('supplier'),
-                    expiry:   fd.get('expiry')
-                };
-                if (!data.name||!data.type||!data.stock||!data.price) {
-                    this.showNotification('Please fill in all required fields','error');
-                    return;
-                }
-                if (this.editingId) {
-                    const ix = this.inventory.findIndex(i=>i.id===this.editingId);
-                    if (ix!==-1) {
-                        this.inventory[ix] = {...this.inventory[ix],...data};
-                        this.showNotification('Inventory item updated successfully','success');
-                        this.logAction('Inventory Updated', `ID ${this.editingId}`);
-                    }
-                } else {
-                    const newItem = { id: Date.now(), ...data };
-                    this.inventory.unshift(newItem);
-                    this.showNotification('Inventory item added successfully','success');
-                    this.logAction('Inventory Created', `ID ${newItem.id}`);
-                }
-                this.saveData();
-                this.closeModal();
-                this.render();
-            }
-
-            deleteInventory(id) {
-                if (confirm('Are you sure you want to delete this inventory item?')) {
-                    this.inventory = this.inventory.filter(i=>i.id!==id);
-                    this.saveData();
-                    this.showNotification('Inventory item deleted successfully','success');
-                    this.logAction('Inventory Deleted', `ID ${id}`);
-                    this.render();
-                }
-            }
-
-            // -----------------------------------------------------------------
-            // INVOICES
-            // -----------------------------------------------------------------
-            saveInvoice() {
-                const f = document.getElementById('invoice-form');
-                const fd = new FormData(f);
-                const data = {
-                    patientName: fd.get('patientName'),
-                    patientId:   parseInt(fd.get('patientId')),
-                    items:      fd.get('items'),
-                    amount:     parseFloat(fd.get('amount')),
-                    status:     fd.get('status')
-                };
-                if (!data.patientId||!data.items||!data.amount) {
-                    this.showNotification('Please fill in all required fields','error');
-                    return;
-                }
-                if (this.editingId) {
-                    const ix = this.invoices.findIndex(i=>i.id===this.editingId);
-                    if (ix!==-1) {
-                        this.invoices[ix] = {...this.invoices[ix],...data};
-                        this.showNotification('Invoice updated successfully','success');
-                        this.logAction('Invoice Updated', `ID ${this.editingId}`);
-                    }
-                } else {
-                    const newInv = {
-                        id: Date.now(),
-                        invoiceNo: this.generateInvoiceNo(),
-                        date: new Date().toISOString().split('T')[0],
-                        ...data
-                    };
-                    this.invoices.unshift(newInv);
-                    this.showNotification('Invoice created successfully','success');
-                    this.logAction('Invoice Created', `ID ${newInv.id}`);
-                }
-                this.saveData();
-                this.closeModal();
-                this.render();
-            }
-
-            deleteInvoice(id) {
-                if (confirm('Are you sure you want to delete this invoice?')) {
-                    this.invoices = this.invoices.filter(i=>i.id!==id);
-                    this.saveData();
-                    this.showNotification('Invoice deleted successfully','success');
-                    this.logAction('Invoice Deleted', `ID ${id}`);
-                    this.render();
-                }
-            }
-
-            // -----------------------------------------------------------------
-            // LAB
-            // -----------------------------------------------------------------
-            saveLabTest() {
-                const f = document.getElementById('lab-form');
-                const fd = new FormData(f);
-                const data = {
-                    patientName: fd.get('patientName'),
-                    patientId:   parseInt(fd.get('patientId')),
-                    testName:    fd.get('testName'),
-                    date:        fd.get('date'),
-                    results:     fd.get('results'),
-                    status:      fd.get('status')
-                };
-                if (!data.patientName||!data.testName||!data.date) {
-                    this.showNotification('Please fill in all required fields','error');
-                    return;
-                }
-                if (this.editingId) {
-                    const ix = this.labTests.findIndex(t=>t.id===this.editingId);
-                    if (ix!==-1) {
-                        this.labTests[ix] = {...this.labTests[ix],...data};
-                        this.showNotification('Lab test updated successfully','success');
-                        this.logAction('Lab Test Updated', `ID ${this.editingId}`);
-                    }
-                } else {
-                    const newTest = { id: Date.now(), ...data };
-                    this.labTests.unshift(newTest);
-                    this.showNotification('Lab test added successfully','success');
-                    this.logAction('Lab Test Created', `ID ${newTest.id}`);
-                }
-                this.saveData();
-                this.closeModal();
-                this.render();
-            }
-
-            deleteLabTest(id) {
-                if (confirm('Are you sure you want to delete this lab test?')) {
-                    this.labTests = this.labTests.filter(t=>t.id!==id);
-                    this.saveData();
-                    this.showNotification('Lab test deleted successfully','success');
-                    this.logAction('Lab Test Deleted', `ID ${id}`);
-                    this.render();
-                }
-            }
-
-            // -----------------------------------------------------------------
-            // STAFF
-            // -----------------------------------------------------------------
-            saveStaff() {
-                const f = document.getElementById('staff-form');
-                const fd = new FormData(f);
-                const data = {
-                    name:     fd.get('name'),
-                    username: fd.get('username'),
-                    email:    fd.get('email'),
-                    password: fd.get('password'),
-                    role:     fd.get('role')
-                };
-                if (!data.name||!data.username||!data.email||!data.role) {
-                    this.showNotification('Please fill in all required fields','error');
-                    return;
-                }
-                if (!data.password && !this.editingId) {
-                    this.showNotification('Password is required for new staff','error');
-                    return;
-                }
-                const exist = this.users.find(u=>u.username===data.username && u.id!==this.editingId);
-                if (exist) { this.showNotification('Username already exists','error'); return; }
-
-                if (this.editingId) {
-                    const ix = this.users.findIndex(u=>u.id===this.editingId);
-                    if (ix!==-1) {
-                        if (!data.password) data.password = this.users[ix].password;
-                        this.users[ix] = {...this.users[ix],...data};
-                        this.showNotification('Staff member updated successfully','success');
-                        this.logAction('Staff Updated', `ID ${this.editingId}`);
-                    }
-                } else {
-                    const newStaff = { id: Date.now(), ...data };
-                    this.users.push(newStaff);
-                    this.showNotification('Staff member added successfully','success');
-                    this.logAction('Staff Created', `ID ${newStaff.id}`);
-                }
-                this.saveData();
-                this.closeModal();
-                this.render();
-            }
-
-            deleteStaff(id) {
-                if (id===this.currentUser.id) {
-                    this.showNotification('You cannot delete your own account','error');
-                    return;
-                }
-                if (confirm('Are you sure you want to delete this staff member?')) {
-                    this.users = this.users.filter(u=>u.id!==id);
-                    this.saveData();
-                    this.showNotification('Staff member deleted successfully','success');
-                    this.logAction('Staff Deleted', `ID ${id}`);
-                    this.render();
-                }
-            }
-
+…
             // -----------------------------------------------------------------
             // PETTY CASH (daily expense) – CRUD & render
             // -----------------------------------------------------------------
@@ -1043,180 +566,178 @@
                 return V[this.currentView] || '<div class="text-center p-8">Page not found</div>';
             }
 
+…
             // -----------------------------------------------------------------
-            // DASHBOARD (added Export / Import buttons)
+            // MODALS (including Petty Cash modal)
             // -----------------------------------------------------------------
-            renderDashboard(stats) {
-                const today = new Date().toISOString().split('T')[0];
-                const todayApts = this.appointments.filter(a=>a.date===today);
+            renderModals() {
                 return `
-                    <div class="space-y-6">
-                        <!-- Stats cards -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-                            <div class="stat-card bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Total Patients</p>
-                                        <h3 class="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-1">${stats.totalPatients}</h3>
-                                        <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">Registered patients</p>
+                    <!-- Patient Modal (now includes consulting doctor & charge) -->
+                    <div id="patient-modal" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 hidden">
+                        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg p-6 animate-in max-h-[90vh] overflow-y-auto">
+                            <div class="flex justify-between items-center mb-6">
+                                <h3 class="text-xl font-bold">${this.editingId?'Edit Patient':'New Patient Registration'}</h3>
+                                <button onclick="app.closeModal()" class="text-slate-400 text-xl"><i class="fas fa-times"></i></button>
+                            </div>
+                            <form id="patient-form" onsubmit="event.preventDefault(); app.savePatient();">
+                                <div class="space-y-4">
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Full Name *</label>
+                                        <input type="text" name="name" value="${this.formData.name||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" required></div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Age *</label>
+                                            <input type="number" name="age" value="${this.formData.age||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" min="0" max="150" required></div>
+                                        <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Gender *</label>
+                                            <select name="gender" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" required>
+                                                <option value="Male" ${(this.formData.gender||'Male')==='Male'?'selected':''}>Male</option>
+                                                <option value="Female" ${(this.formData.gender||'Male')==='Female'?'selected':''}>Female</option>
+                                                <option value="Other" ${(this.formData.gender||'Male')==='Other'?'selected':''}>Other</option>
+                                            </select></div>
                                     </div>
-                                    <div class="p-3 bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-300 rounded-lg"><i class="fas fa-user-injured text-xl"></i></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Contact Number *</label>
+                                        <input type="tel" name="contact" value="${this.formData.contact||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" required></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Consulting Doctor *</label>
+                                        <select name="doctorId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" required>
+                                            <option value="">Select Doctor</option>
+                                            ${this.users.filter(u=>u.role==='Doctor' || u.role==='Admin')
+                                                .map(d=>`<option value="${d.id}" ${this.formData.doctorId===d.id?'selected':''}>${d.name}</option>`).join('')}
+                                        </select></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Consultation Charge (Rs) *</label>
+                                        <input type="number" name="charge" value="${this.formData.charge||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" min="0" step="0.01" required></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Address</label>
+                                        <textarea name="address" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" rows="2">${this.formData.address||''}</textarea></div>
+                                    ${this.formData.mrNumber ? `<div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">MR Number</label><input type="text" value="${this.formData.mrNumber}" class="w-full p-3 border rounded-lg bg-slate-100 dark:bg-slate-700" readonly></div>` : ''}
+                                    <div class="flex justify-end pt-4 gap-3">
+                                        <button type="button" onclick="app.closeModal()" class="px-6 py-2 border border-slate-300 dark:border-slate-600 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition">Cancel</button>
+                                        <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 transition">${this.editingId?'Update':'Save'} Patient</button>
+                                    </div>
                                 </div>
-                            </div>
-
-                            <div class="stat-card bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Today's Appointments</p>
-                                        <h3 class="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-1">${stats.todayAppointments}</h3>
-                                        <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">Scheduled for today</p>
-                                    </div>
-                                    <div class="p-3 bg-purple-50 dark:bg-purple-900 text-purple-600 dark:text-purple-300 rounded-lg"><i class="fas fa-calendar-check text-xl"></i></div>
-                                </div>
-                            </div>
-
-                            <div class="stat-card bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Monthly Revenue</p>
-                                        <h3 class="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-1">${this.formatCurrency(stats.monthlyRevenue)}</h3>
-                                        <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">This month's income</p>
-                                    </div>
-                                    <div class="p-3 bg-green-50 dark:bg-green-900 text-green-600 dark:text-green-300 rounded-lg"><i class="fas fa-dollar-sign text-xl"></i></div>
-                                </div>
-                            </div>
-
-                            <div class="stat-card bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Low Stock Items</p>
-                                        <h3 class="text-3xl font-bold text-red-600 dark:text-red-400 mt-1">${stats.lowStock}</h3>
-                                        <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">Need restocking</p>
-                                    </div>
-                                    <div class="p-3 bg-red-50 dark:bg-red-900 text-red-600 dark:text-red-300 rounded-lg"><i class="fas fa-exclamation-triangle text-xl"></i></div>
-                                </div>
-                            </div>
-
-                            <div class="stat-card bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Today's Petty Cash</p>
-                                        <h3 class="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-1">${this.formatCurrency(stats.todayPettyCash)}</h3>
-                                        <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">Cash expenses today</p>
-                                    </div>
-                                    <div class="p-3 bg-indigo-50 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 rounded-lg"><i class="fas fa-wallet text-xl"></i></div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Quick actions -->
-                        <div class="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-600">
-                            <h3 class="font-bold text-slate-800 dark:text-slate-200 mb-4">Quick Actions</h3>
-                            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                                <button onclick="app.showModal('patient-modal')" class="p-4 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition text-center">
-                                    <i class="fas fa-user-plus text-2xl text-blue-600 dark:text-blue-300 mb-2 block"></i>
-                                    <span class="font-medium">New Patient</span>
-                                </button>
-                                <button onclick="app.showModal('appointment-modal')" class="p-4 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition text-center">
-                                    <i class="fas fa-calendar-plus text-2xl text-purple-600 dark:text-purple-300 mb-2 block"></i>
-                                    <span class="font-medium">Book Appointment</span>
-                                </button>
-                                <button onclick="app.showModal('prescription-modal')" class="p-4 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition text-center">
-                                    <i class="fas fa-file-medical text-2xl text-green-600 dark:text-green-300 mb-2 block"></i>
-                                    <span class="font-medium">New Prescription</span>
-                                </button>
-                                <button onclick="app.showModal('invoice-modal')" class="p-4 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition text-center">
-                                    <i class="fas fa-receipt text-2xl text-orange-600 dark:text-orange-300 mb-2 block"></i>
-                                    <span class="font-medium">Create Invoice</span>
-                                </button>
-                                <button onclick="app.showModal('pettycash-modal')" class="p-4 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition text-center">
-                                    <i class="fas fa-wallet text-2xl text-indigo-600 dark:text-indigo-300 mb-2 block"></i>
-                                    <span class="font-medium">Add Cash Expense</span>
-                                </button>
-                                <button onclick="app.exportAllData()" class="p-4 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition text-center">
-                                    <i class="fas fa-file-export text-2xl text-blue-600 dark:text-blue-300 mb-2 block"></i>
-                                    <span class="font-medium">Export Data</span>
-                                </button>
-                                <button onclick="document.getElementById('import-file').click()" class="p-4 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition text-center">
-                                    <i class="fas fa-file-import text-2xl text-green-600 dark:text-green-300 mb-2 block"></i>
-                                    <span class="font-medium">Import Data</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Today's appointments -->
-                        <div class="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-600">
-                            <div class="flex justify-between items-center mb-4">
-                                <h3 class="font-bold text-slate-800 dark:text-slate-200">Today's Appointments</h3>
-                                <span class="text-sm text-slate-500 dark:text-slate-400">${new Date().toLocaleDateString()}</span>
-                            </div>
-                            <div class="space-y-3">
-                                ${todayApts.length>0 ? todayApts.map(apt=>`
-                                    <div class="flex justify-between items-center p-3 border border-slate-100 dark:border-slate-600 rounded-lg">
-                                        <div>
-                                            <div class="flex items-center gap-2 mb-1">
-                                                <span class="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded text-xs font-bold">Token #${apt.token}</span>
-                                                <span class="text-xs text-slate-400 dark:text-slate-300">${apt.time}</span>
-                                                <span class="text-xs px-2 py-0.5 rounded ${
-                                                    apt.status==='Completed' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' :
-                                                    apt.status==='Confirmed' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' :
-                                                    'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
-                                                }">${apt.status}</span>
-                                            </div>
-                                            <h4 class="font-bold text-slate-800 dark:text-slate-200">${apt.patientName}</h4>
-                                            <p class="text-sm text-slate-500 dark:text-slate-400">${apt.doctor}</p>
-                                        </div>
-                                        <div class="flex gap-2">
-                                            ${apt.status!=='Completed' ? `<button onclick="app.updateAppointmentStatus(${apt.id},'Completed')" class="p-2 text-green-600 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900 rounded" title="Mark Complete"><i class="fas fa-check"></i></button>` : ''}
-                                            <button onclick="app.showModal('appointment-modal',${JSON.stringify(apt).replace(/"/g,'&quot;')})" class="p-2 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900 rounded" title="Edit"><i class="fas fa-edit"></i></button>
-                                        </div>
-                                    </div>
-                                `).join('') : '<p class="text-center text-slate-500 dark:text-slate-400 py-4">No appointments scheduled for today</p>'}
-                            </div>
+                            </form>
                         </div>
                     </div>
-                `;
-            }
 
-            // -----------------------------------------------------------------
-            // PATIENT LIST (now shows consulting doctor & charge)
-            // -----------------------------------------------------------------
-            renderPatients() {
-                const filtered = this.searchTerm ?
-                    this.patients.filter(p=>
-                        p.name.toLowerCase().includes(this.searchTerm.toLowerCase()) ||
-                        p.mrNumber.toLowerCase().includes(this.searchTerm.toLowerCase()) ||
-                        p.contact.includes(this.searchTerm)
-                    ) : this.patients;
-
-                return `
-                    <div class="space-y-6">
-                        <div class="flex flex-col sm:flex-row justify-between gap-4">
-                            <div class="relative max-w-md w-full">
-                                <input id="search-patients" type="text" placeholder="Search by name, MR number or contact..." class="w-full pl-10 p-2.5 border rounded-lg focus:border-blue-500 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" value="${this.searchTerm}" oninput="app.filterPatients()">
-                                <i class="fas fa-search absolute left-3 top-3 text-slate-400 dark:text-slate-300"></i>
+                    <!-- Appointment Modal -->
+                    <div id="appointment-modal" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 hidden">
+                        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg p-6 animate-in max-h-[90vh] overflow-y-auto">
+                            <div class="flex justify-between items-center mb-6">
+                                <h3 class="text-xl font-bold">${this.editingId?'Edit Appointment':'Book New Appointment'}</h3>
+                                <button onclick="app.closeModal()" class="text-slate-400 text-xl"><i class="fas fa-times"></i></button>
                             </div>
-                            <button onclick="app.showModal('patient-modal')" class="bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 flex items-center gap-2"><i class="fas fa-user-plus"></i> New Patient</button>
+                            <form id="appointment-form" onsubmit="event.preventDefault(); app.saveAppointment();">
+                                <div class="space-y-4">
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Select Patient *</label>
+                                        <select name="patientId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" required>
+                                            <option value="">Select Patient</option>
+                                            ${this.patients.map(p=>`<option value="${p.id}" ${this.formData.patientId===p.id?'selected':''}>${p.name} (${p.mrNumber})</option>`).join('')}
+                                        </select></div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Date *</label>
+                                            <input type="date" name="date" value="${this.formData.date||new Date().toISOString().split('T')[0]}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" required></div>
+                                        <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Time *</label>
+                                            <input type="time" name="time" value="${this.formData.time||'09:00'}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" required></div>
+                                    </div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Doctor *</label>
+                                        <select name="doctor" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" required>
+                                            <option value="">Select Doctor</option>
+                                            ${this.users.filter(u=>u.role==='Doctor' || u.role==='Admin')
+                                                .map(d=>`<option value="${d.name}" ${this.formData.doctor===d.name?'selected':''}>${d.name}</option>`).join('')}
+                                        </select></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Notes</label>
+                                        <textarea name="notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" rows="3">${this.formData.notes||''}</textarea></div>
+                                    ${this.editingId ? `
+                                        <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Status</label>
+                                            <select name="status" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200">
+                                                <option value="Pending" ${this.formData.status==='Pending'?'selected':''}>Pending</option>
+                                                <option value="Confirmed" ${this.formData.status==='Confirmed'?'selected':''}>Confirmed</option>
+                                                <option value="Completed" ${this.formData.status==='Completed'?'selected':''}>Completed</option>
+                                                <option value="Cancelled" ${this.formData.status==='Cancelled'?'selected':''}>Cancelled</option>
+                                            </select></div>` : '' }
+                                    <div class="flex justify-end pt-4 gap-3">
+                                        <button type="button" onclick="app.closeModal()" class="px-6 py-2 border border-slate-300 dark:border-slate-600 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition">Cancel</button>
+                                        <button type="submit" class="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-purple-700 transition">${this.editingId?'Update':'Book'} Appointment</button>
+                                    </div>
+                                </div>
+                            </form>
                         </div>
+                    </div>
 
-                        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-600 overflow-hidden">
-                            ${filtered.length>0 ? `
-                                <div class="overflow-x-auto">
-                                    <table class="w-full text-left">
-                                        <thead class="bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm font-semibold border-b border-slate-200 dark:border-slate-600">
-                                            <tr>
-                                                <th class="p-4">MR Number</th>
-                                                <th class="p-4">Name</th>
-                                                <th class="p-4">Age/Gender</th>
-                                                <th class="p-4">Contact</th>
-                                                <th class="p-4">Consulting Doctor</th>
-                                                <th class="p-4">Charge</th>
-                                                <th class="p-4">Registered</th>
-                                                <th class="p-4 text-center">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
-                                            ${filtered.map(p=>`
-                                                <tr class="table-row">
-                                                    <td class="p-4 font-mono text-sm text-blue-600 font-bold">${p.mrNumber}</td>
-                                                    <td class="p-4 font-medium dark:text-slate-200">${p.name}</td>
+                    <!-- Prescription Modal (stock‑aware) -->
+                    <div id="prescription-modal" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 hidden">
+                        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-2xl p-6 animate-in max-h-[90vh] overflow-y-auto">
+                            <div class="flex justify-between items-center mb-6">
+                                <h3 class="text-xl font-bold">${this.editingId?'Edit Prescription':'New Prescription'}</h3>
+                                <button onclick="app.closeModal()" class="text-slate-400 text-xl"><i class="fas fa-times"></i></button>
+                            </div>
+                            <form id="prescription-form" onsubmit="event.preventDefault(); app.savePrescription();">
+                                <div class="space-y-4">
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Select Patient *</label>
+                                        <select name="patientId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" required>
+                                            <option value="">Select Patient</option>
+                                            ${this.patients.map(p=>`<option value="${p.id}" ${this.formData.patientId===p.id?'selected':''}>${p.name} (${p.mrNumber})</option>`).join('')}
+                                        </select></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Diagnosis *</label>
+                                        <input type="text" name="diagnosis" value="${this.formData.diagnosis||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" required></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Medicines *</label>
+                                        <div id="prescription-meds-list" class="space-y-2"></div>
+                                        <button type="button" class="mt-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-2" onclick="app.addPrescriptionMedication()"><i class="fas fa-plus"></i> Add Medicine</button></div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Additional Notes</label>
+                                        <textarea name="notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" rows="3">${this.formData.notes||''}</textarea></div>
+                                    <div class="flex justify-end pt-4 gap-3">
+                                        <button type="button" onclick="app.closeModal()" class="px-6 py-2 border border-slate-300 dark:border-slate-600 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition">Cancel</button>
+                                        <button type="submit" class="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 transition">${this.editingId?'Update':'Save'} Prescription</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Inventory Modal -->
+                    <div id="inventory-modal" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 hidden">
+                        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg p-6 animate-in max-h-[90vh] overflow-y-auto">
+                            <div class="flex justify-between items-center mb-6">
+                                <h3 class="text-xl font-bold">${this.editingId?'Edit Inventory Item':'Add New Inventory Item'}</h3>
+                                <button onclick="app.closeModal()" class="text-slate-400 text-xl"><i class="fas fa-times"></i></button>
+                            </div>
+                            <form id="inventory-form" onsubmit="event.preventDefault(); app.saveInventory();">
+                                <div class="space-y-4">
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Medicine Name *</label>
+                                        <input type="text" name="name" value="${this.formData.name||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" required></div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Type *</label>
+                                            <select name="type" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" required>
+                                                <option value="Tablet" ${(this.formData.type||'Tablet')==='Tablet'?'selected':''}>Tablet</option>
+                                                <option value="Capsule" ${(this.formData.type||'Tablet')==='Capsule'?'selected':''}>Capsule</option>
+                                                <option value="Syrup" ${(this.formData.type||'Tablet')==='Syrup'?'selected':''}>Syrup</option>
+                                                <option value="Injection" ${(this.formData.type||'Tablet')==='Injection'?'selected':''}>Injection</option>
+                                                <option value="Ointment" ${(this.formData.type||'Tablet')==='Ointment'?'selected':''}>Ointment</option>
+                                            </select></div>
+                                        <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Stock *</label>
+                                            <input type="number" name="stock" value="${this.formData.stock||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" min="0" required></div>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Price (Rs) *</label>
+                                            <input type="number" name="price" value="${this.formData.price||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" min="0" step="0.01" required></div>
+                                        <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Expiry Date</label>
+                                            <input type="date" name="expiry" value="${this.formData.expiry||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200"></div>
+                                    </div>
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Supplier</label>
+                                        <input type="text" name="supplier" value="${this.formData.supplier||''}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200"></div>
+                                    <div class="flex justify-end pt-4 gap-3">
+                                        <button type="button" onclick="app.closeModal()" class="px-6 py-2 border border-slate-300 dark:border-slate-600 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition">Cancel</button>
+                                        <button type="submit" class="bg-teal-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-teal-700 transition">${this.editingId?'Update':'Add'} Item</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Invoice Modal -->
+                    <div id="invoice-modal" class="modal fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 hidden">
+                        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg p-6 animate-in max-h-[90vh] overflow-y-auto">
+                            <div class="flex justify-between items-center mb-6">
+                                <h3 class="text-xl font-bold">${this.editingId?'Edit Invoice':'Create New Invoice'}</h3>
+                                <button onclick="app.closeModal()" class="text-slate-400 text-xl"><i class="fas fa-times"></i></button>
+                            </div>
+                            <form id="invoice-form" onsubmit="event.preventDefault(); app.saveInvoice();">
+                                <div class="space-y-4">
+                                    <div><label class="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Select Patient *</label>
+                                        <select name="patientId" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-5 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200" required>
